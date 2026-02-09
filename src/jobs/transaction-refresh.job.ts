@@ -16,9 +16,9 @@ export class TransactionRefreshJob {
   ) {}
 
   /**
-   * Refresh transactions for all active manifests every 15 seconds
+   * Refresh transactions for all active manifests every 30 seconds
    */
-  @Cron(CronExpression.EVERY_10_SECONDS) // Using 10s as closest to 15s
+  @Cron(CronExpression.EVERY_30_SECONDS)
   async refreshTransactions() {
     if (this.isRunning) {
       this.logger.warn('Previous transaction refresh job still running, skipping');

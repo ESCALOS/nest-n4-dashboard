@@ -4,15 +4,15 @@
  */
 
 export const N4Queries = {
-  // ============================================
-  // MANIFEST & VESSEL QUERIES
-  // ============================================
+    // ============================================
+    // MANIFEST & VESSEL QUERIES
+    // ============================================
 
-  /**
-   * Get manifest information by manifest ID
-   * Returns: gkey, vvd_gkey, vessel name
-   */
-  getManifest: `
+    /**
+     * Get manifest information by manifest ID
+     * Returns: gkey, vvd_gkey, vessel name
+     */
+    getManifest: `
     SELECT acv.gkey, vis.vvd_gkey, vv.name
     FROM argo_carrier_visit acv
     INNER JOIN vsl_vessel_visit_details vis ON vis.vvd_gkey = acv.cvcvd_gkey
@@ -20,14 +20,14 @@ export const N4Queries = {
     WHERE acv.id = @manifestId
   `,
 
-  // ============================================
-  // BL ITEMS QUERIES
-  // ============================================
+    // ============================================
+    // BL ITEMS QUERIES
+    // ============================================
 
-  /**
-   * Get BL Items for embarque/despacho (SSP pattern)
-   */
-  getBLItems: `
+    /**
+     * Get BL Items for embarque/despacho (SSP pattern)
+     */
+    getBLItems: `
     SELECT
       cbi.gkey AS gkey,
       cbi.nbr AS nbr,
@@ -35,13 +35,13 @@ export const N4Queries = {
       COALESCE(TRY_CONVERT(INT, cbi.CUSTDFF_BULTOS), 0) AS bultosManifestados
     FROM crg_bl_item cbi
     INNER JOIN crg_bills_of_lading cbol ON cbol.gkey = cbi.bl_gkey
-    WHERE cbol.cv_gkey = @cvGkey AND cbi.nbr LIKE 'SSP%'
+    WHERE cbol.cv_gkey = @cvGkey AND (cbi.flex_string01 <> 'Y' OR cbi.flex_string01 IS NULL)
   `,
 
-  /**
-   * Get BL Items for acopio (OS pattern)
-   */
-  getBLItemsAcopio: `
+    /**
+     * Get BL Items for acopio (OS pattern)
+     */
+    getBLItemsAcopio: `
     SELECT
       cbi.gkey AS gkey,
       cbi.nbr AS nbr,
@@ -49,17 +49,17 @@ export const N4Queries = {
       COALESCE(TRY_CONVERT(INT, cbi.CUSTDFF_BULTOS), 0) AS bultosManifestados
     FROM crg_bl_item cbi
     INNER JOIN crg_bills_of_lading cbol ON cbol.gkey = cbi.bl_gkey
-    WHERE cbol.cv_gkey = @cvGkey AND cbi.nbr LIKE 'OS%'
+    WHERE cbol.cv_gkey = @cvGkey AND cbi.flex_string01 = 'Y'
   `,
 
-  // ============================================
-  // BODEGAS QUERY
-  // ============================================
+    // ============================================
+    // BODEGAS QUERY
+    // ============================================
 
-  /**
-   * Get bodegas (warehouses) for a vessel visit
-   */
-  getBodegas: `
+    /**
+     * Get bodegas (warehouses) for a vessel visit
+     */
+    getBodegas: `
     SELECT
       ccb.gkey AS gkey,
       ccb.CUSTOMCATBOG_DESCRIPCION AS nbr,
@@ -70,15 +70,15 @@ export const N4Queries = {
     WHERE cr.CUSTOMRESUME_VESSELVISITIT = @vvdGkey
   `,
 
-  // ============================================
-  // TRANSACTION QUERIES - SHIPPING MODULE
-  // ============================================
+    // ============================================
+    // TRANSACTION QUERIES - SHIPPING MODULE
+    // ============================================
 
-  /**
-   * Get ACOPIO transactions
-   * Filtered by BL item gkeys
-   */
-  getTransactionsAcopio: `
+    /**
+     * Get ACOPIO transactions
+     * Filtered by BL item gkeys
+     */
+    getTransactionsAcopio: `
     SELECT
         calc.bodega,
         ISNULL(rtt.bl_item_gkey, 0) AS blItemGkey,
@@ -119,11 +119,11 @@ export const N4Queries = {
         calc.jornada
   `,
 
-  /**
-   * Get EMBARQUE_INDIRECTO transactions
-   * Filtered by BL item gkeys
-   */
-  getTransactionsEmbarqueIndirecto: `
+    /**
+     * Get EMBARQUE_INDIRECTO transactions
+     * Filtered by BL item gkeys
+     */
+    getTransactionsEmbarqueIndirecto: `
     SELECT
         calc.bodega,
         ISNULL(ciwt.CUSTOMWGTRAN_BL_ITEM, 0) AS blItemGkey,
@@ -163,7 +163,7 @@ export const N4Queries = {
         calc.jornada
   `,
 
-  getTransactionsDespacho: `
+    getTransactionsDespacho: `
     SELECT
         calc.bodega,
         ISNULL(rtt.bl_item_gkey, 0) AS blItemGkey,
@@ -191,7 +191,7 @@ export const N4Queries = {
                     FORMAT(stg.stage_end, 'dd-MM-yyyy') + ' 16:00 - 23:59'
             END AS jornada
     ) calc
-    WHERE rtt.bl_item_gkey IN (@blItemGkeys)
+    WHERE rtt.bl_item_gkey IN (SELECT value FROM STRING_SPLIT(@blItemGkeys, ','))
       AND rtt.status = 'COMPLETE'
       AND rtt.gate_gkey <> 54
     GROUP BY
@@ -204,26 +204,26 @@ export const N4Queries = {
         calc.jornada;
   `,
 
-  // Placeholder for future transaction types
-  getTransactionsEmbarqueDirecto: `
+    // Placeholder for future transaction types
+    getTransactionsEmbarqueDirecto: `
     -- TODO: Implement EMBARQUE_DIRECTO query
     SELECT 1 WHERE 1=0
   `,
 
-  getTransactionsDescarga: `
+    getTransactionsDescarga: `
     -- TODO: Implement DESCARGA query
     SELECT 1 WHERE 1=0
   `,
 
-  // ============================================
-  // APPOINTMENTS QUERIES - CONTAINERS MODULE
-  // ============================================
+    // ============================================
+    // APPOINTMENTS QUERIES - CONTAINERS MODULE
+    // ============================================
 
-  /**
-   * Get appointments in progress (Citas en Proceso de Atención)
-   * For container operations at gate 53
-   */
-  getAppointmentsInProgress: `
+    /**
+     * Get appointments in progress (Citas en Proceso de Atención)
+     * For container operations at gate 53
+     */
+    getAppointmentsInProgress: `
     SELECT
         appt.id AS Cita,
         slot.start_date AS Fecha,

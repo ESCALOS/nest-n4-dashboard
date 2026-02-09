@@ -1,9 +1,18 @@
-import { Controller, Post, Param, Get, ParseIntPipe } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Param,
+  Get,
+  ParseIntPipe,
+  UsePipes,
+} from '@nestjs/common';
 import { CacheManagementService } from './cache.service';
+import { OperationType } from '../shipping/enums/operation-type.enum';
+import { ParseOperationTypePipe } from './operation-type.pipe';
 
 @Controller('cache')
 export class CacheController {
-  constructor(private readonly cacheService: CacheManagementService) {}
+  constructor(private readonly cacheService: CacheManagementService) { }
 
   /**
    * Reset bodegas cache for a specific vessel visit
@@ -39,6 +48,20 @@ export class CacheController {
   }
 
   /**
+   * Reset transactions cache for a specific manifest and operation type
+   */
+  @Post('transactions/:manifestId/:operationType/reset')
+  async resetTransactions(
+    @Param('manifestId') manifestId: string,
+    @Param('operationType', ParseOperationTypePipe) operationType: OperationType,
+  ): Promise<{ message: string }> {
+    await this.cacheService.resetTransactions(manifestId, operationType);
+    return {
+      message: `Transactions cache reset for ${manifestId}:${operationType}`,
+    };
+  }
+
+  /**
    * Reset all caches for a manifest
    */
   @Post('reset-all/:manifestId')
@@ -52,17 +75,82 @@ export class CacheController {
     };
   }
 
+  // ============================================
+  // MANIFEST TRACKING BY OPERATION TYPE
+  // ============================================
+
   /**
-   * Get list of active manifests being tracked
+   * Add a manifest to active tracking for a specific operation type
    */
-  @Get('active-manifests')
-  async getActiveManifests(): Promise<{ manifests: string[] }> {
-    const manifests = await this.cacheService.getActiveManifests();
+  @Post('track/:manifestId/:operationType')
+  async trackManifest(
+    @Param('manifestId') manifestId: string,
+    @Param('operationType', ParseOperationTypePipe) operationType: OperationType,
+  ): Promise<{ message: string }> {
+    await this.cacheService.addManifestToTracking(manifestId, operationType);
+    return {
+      message: `Manifest ${manifestId} added to tracking for ${operationType}`,
+    };
+  }
+
+  /**
+   * Remove a manifest from active tracking for a specific operation type
+   */
+  @Post('untrack/:manifestId/:operationType')
+  async untrackManifest(
+    @Param('manifestId') manifestId: string,
+    @Param('operationType', ParseOperationTypePipe) operationType: OperationType,
+  ): Promise<{ message: string }> {
+    await this.cacheService.removeManifestFromTracking(
+      manifestId,
+      operationType,
+    );
+    return {
+      message: `Manifest ${manifestId} removed from tracking for ${operationType}`,
+    };
+  }
+
+  /**
+   * Get list of active manifests for a specific operation type
+   */
+  @Get('active-manifests/:operationType')
+  async getActiveManifestsByOperation(
+    @Param('operationType', ParseOperationTypePipe) operationType: OperationType,
+  ): Promise<{ manifests: string[] }> {
+    const manifests = await this.cacheService.getActiveManifestsByOperation(
+      operationType,
+    );
     return { manifests };
   }
 
   /**
-   * Remove a manifest from active tracking
+   * Get all active manifests grouped by operation type
+   */
+  @Get('active-manifests')
+  async getAllActiveManifestsGrouped(): Promise<{
+    manifests: Record<OperationType, string[]>;
+  }> {
+    const manifests = await this.cacheService.getAllActiveManifestsGrouped();
+    return { manifests };
+  }
+
+  /**
+   * Get transactions cache key for a manifest and operation type
+   */
+  @Get('transactions/:manifestId/:operationType/key')
+  async getTransactionKey(
+    @Param('manifestId') manifestId: string,
+    @Param('operationType', ParseOperationTypePipe) operationType: OperationType,
+  ): Promise<{ cacheKey: string }> {
+    const cacheKey = this.cacheService.getTransactionCacheKey(
+      manifestId,
+      operationType,
+    );
+    return { cacheKey };
+  }
+
+  /**
+   * Remove a manifest from active tracking (all operation types) - deprecated
    */
   @Post('active-manifests/:manifestId/remove')
   async removeFromActiveManifests(

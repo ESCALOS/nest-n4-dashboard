@@ -1,12 +1,76 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { RedisService } from '../database/redis/redis.service';
 import { CACHE_KEYS } from '../common/constants/cache-keys.constant';
+import { OperationType } from '../shipping/enums/operation-type.enum';
 
 @Injectable()
 export class CacheManagementService {
   private readonly logger = new Logger(CacheManagementService.name);
 
-  constructor(private readonly redisService: RedisService) {}
+  constructor(private readonly redisService: RedisService) { }
+
+  /**
+   * Get the cache key for transactions by manifest and operation type
+   */
+  private getTransactionKey(manifestId: string, operationType: string): string {
+    return CACHE_KEYS.transactions(manifestId, operationType);
+  }
+
+  /**
+   * Add a manifest to active tracking for a specific operation type
+   */
+  async addManifestToTracking(
+    manifestId: string,
+    operationType: OperationType,
+  ): Promise<void> {
+    const trackingKey = CACHE_KEYS.activeManifests;
+    const fullKey = `${trackingKey}:${operationType}`;
+    await this.redisService.sadd(fullKey, manifestId);
+    this.logger.log(`Added manifest ${manifestId} to tracking for ${operationType}`);
+  }
+
+  /**
+   * Remove a manifest from active tracking for a specific operation type
+   */
+  async removeManifestFromTracking(
+    manifestId: string,
+    operationType: OperationType,
+  ): Promise<void> {
+    const trackingKey = CACHE_KEYS.activeManifests;
+    const fullKey = `${trackingKey}:${operationType}`;
+    await this.redisService.srem(fullKey, manifestId);
+    this.logger.log(`Removed manifest ${manifestId} from tracking for ${operationType}`);
+  }
+
+  /**
+   * Get list of active manifests for a specific operation type
+   */
+  async getActiveManifestsByOperation(
+    operationType: OperationType,
+  ): Promise<string[]> {
+    const trackingKey = CACHE_KEYS.activeManifests;
+    const fullKey = `${trackingKey}:${operationType}`;
+    return this.redisService.smembers(fullKey);
+  }
+
+  /**
+   * Get transactions cache key for a manifest and operation type
+   */
+  getTransactionCacheKey(manifestId: string, operationType: string): string {
+    return this.getTransactionKey(manifestId, operationType);
+  }
+
+  /**
+   * Reset transactions cache for a specific manifest and operation type
+   */
+  async resetTransactions(
+    manifestId: string,
+    operationType: OperationType,
+  ): Promise<void> {
+    const cacheKey = this.getTransactionKey(manifestId, operationType);
+    await this.redisService.del(cacheKey);
+    this.logger.log(`Reset transactions cache for ${manifestId}:${operationType}`);
+  }
 
   /**
    * Reset bodegas cache for a specific vessel visit
@@ -82,17 +146,36 @@ export class CacheManagementService {
   }
 
   /**
-   * Get list of active manifests being tracked
+   * Get list of active manifests being tracked (all operation types)
    */
   async getActiveManifests(): Promise<string[]> {
     return this.redisService.smembers(CACHE_KEYS.activeManifests);
   }
 
   /**
-   * Remove a manifest from active tracking
+   * Remove a manifest from active tracking (all operation types)
    */
   async removeFromActiveManifests(manifestId: string): Promise<void> {
     await this.redisService.srem(CACHE_KEYS.activeManifests, manifestId);
     this.logger.log(`Removed ${manifestId} from active manifests`);
+  }
+
+  /**
+   * Get all active manifests grouped by operation type
+   */
+  async getAllActiveManifestsGrouped(): Promise<Record<OperationType, string[]>> {
+    const result: Record<OperationType, string[]> = {
+      [OperationType.ACOPIO]: [],
+      [OperationType.EMBARQUE_INDIRECTO]: [],
+      [OperationType.DESPACHO]: [],
+      [OperationType.EMBARQUE_DIRECTO]: [],
+      [OperationType.DESCARGA]: [],
+    };
+
+    for (const opType of Object.values(OperationType)) {
+      result[opType] = await this.getActiveManifestsByOperation(opType);
+    }
+
+    return result;
   }
 }

@@ -10,9 +10,9 @@ export class AppointmentsRefreshJob {
   constructor(private readonly appointmentsService: AppointmentsService) {}
 
   /**
-   * Refresh appointments in progress every 5 seconds
+   * Refresh appointments in progress every 30 seconds
    */
-  @Cron(CronExpression.EVERY_5_SECONDS)
+  @Cron(CronExpression.EVERY_30_SECONDS)
   async refreshAppointments() {
     if (this.isRunning) {
       this.logger.warn(

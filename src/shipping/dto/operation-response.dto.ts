@@ -10,16 +10,45 @@ export class TransactionDto {
   totalPeso: number;
 }
 
+export class SummaryJornadaDto {
+  peso: number;
+  bultos: number;
+}
+
 export class SummaryByKeyDto {
   bultos: number;
   peso: number;
 }
 
+export class SummaryBlItemDto {
+  gkey: string;
+  nbr: string;
+  pesoManifestado: number;
+  bultosManifestados: number;
+  pesoDescargado: number;
+  bultosDescargados: number;
+  porcentajePeso: number;
+  porcentajeBultos: number;
+  jornadas: Record<string, SummaryJornadaDto>;
+}
+
+export class SummaryBodegaDto {
+  gkey: string;
+  nbr: string;
+  pesoManifestado: number;
+  bultosManifestados: number;
+  pesoDescargado: number;
+  bultosDescargados: number;
+  porcentajePeso: number;
+  porcentajeBultos: number;
+  jornadas: Record<string, SummaryJornadaDto>;
+}
+
 export class SummaryDto {
   totalBultos: number;
   totalPeso: number;
-  byBodega: Record<string, SummaryByKeyDto>;
-  byJornada: Record<string, SummaryByKeyDto>;
+  blItems: SummaryBlItemDto[];
+  bodegas: SummaryBodegaDto[];
 }
 
 export class OperationResponseDto {

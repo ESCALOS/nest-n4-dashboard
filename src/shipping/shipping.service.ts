@@ -1,5 +1,6 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { N4Service, TransactionResult } from '../database/n4/n4.service';
+import { N4Service } from '../database/n4/n4.service';
+import { TransactionResult } from '../database/n4/n4.interfaces';
 import { RedisService } from '../database/redis/redis.service';
 import { CACHE_KEYS } from '../common/constants/cache-keys.constant';
 import {
@@ -13,6 +14,8 @@ import {
   OperationResponseDto,
   TransactionDto,
   SummaryDto,
+  SummaryBlItemDto,
+  SummaryBodegaDto,
 } from './dto/operation-response.dto';
 
 @Injectable()
@@ -22,7 +25,7 @@ export class ShippingService {
   constructor(
     private readonly n4Service: N4Service,
     private readonly redisService: RedisService,
-  ) {}
+  ) { }
 
   // ============================================
   // MANIFEST METHODS
@@ -220,7 +223,7 @@ export class ShippingService {
     ]);
 
     // Calculate summary
-    const summary = this.calculateSummary(transactions);
+    const summary = this.calculateSummary(transactions, blItems, bodegas);
 
     return {
       manifest,
@@ -231,33 +234,108 @@ export class ShippingService {
     };
   }
 
-  private calculateSummary(transactions: TransactionDto[]): SummaryDto {
-    const summary: SummaryDto = {
-      totalBultos: 0,
-      totalPeso: 0,
-      byBodega: {},
-      byJornada: {},
-    };
+  private calculateSummary(
+    transactions: TransactionDto[],
+    blItems: BlItemDto[],
+    bodegas: BodegaDto[],
+  ): SummaryDto {
+    // Initialize total counters
+    const totalBultos = transactions.reduce((sum, tx) => sum + tx.totalBultos, 0);
+    const totalPeso = transactions.reduce((sum, tx) => sum + tx.totalPeso, 0);
 
-    for (const tx of transactions) {
-      summary.totalBultos += tx.totalBultos;
-      summary.totalPeso += tx.totalPeso;
-
-      // By bodega
-      if (!summary.byBodega[tx.bodega]) {
-        summary.byBodega[tx.bodega] = { bultos: 0, peso: 0 };
-      }
-      summary.byBodega[tx.bodega].bultos += tx.totalBultos;
-      summary.byBodega[tx.bodega].peso += tx.totalPeso;
-
-      // By jornada
-      if (!summary.byJornada[tx.jornada]) {
-        summary.byJornada[tx.jornada] = { bultos: 0, peso: 0 };
-      }
-      summary.byJornada[tx.jornada].bultos += tx.totalBultos;
-      summary.byJornada[tx.jornada].peso += tx.totalPeso;
+    // Build blItems summary
+    const blItemsMap = new Map<string, SummaryBlItemDto>();
+    for (const item of blItems) {
+      blItemsMap.set(String(item.gkey), {
+        gkey: String(item.gkey),
+        nbr: item.nbr,
+        pesoManifestado: item.pesoManifestado,
+        bultosManifestados: item.bultosManifestados,
+        pesoDescargado: 0,
+        bultosDescargados: 0,
+        porcentajePeso: 0,
+        porcentajeBultos: 0,
+        jornadas: {},
+      });
     }
 
-    return summary;
+    // Build bodegas summary
+    const bodegasMap = new Map<string, SummaryBodegaDto>();
+    for (const bodega of bodegas) {
+      const bodegaKey = String(bodega.nbr).toUpperCase();
+      bodegasMap.set(bodegaKey, {
+        gkey: String(bodega.gkey),
+        nbr: bodega.nbr,
+        pesoManifestado: bodega.pesoManifestado,
+        bultosManifestados: bodega.bultosManifestados,
+        pesoDescargado: 0,
+        bultosDescargados: 0,
+        porcentajePeso: 0,
+        porcentajeBultos: 0,
+        jornadas: {},
+      });
+    }
+
+    // Process transactions
+    for (const tx of transactions) {
+      // By blItem
+      const blItem = blItemsMap.get(String(tx.blItemGkey));
+      if (blItem) {
+        blItem.pesoDescargado += tx.totalPeso;
+        blItem.bultosDescargados += tx.totalBultos;
+
+        // By jornada for blItem
+        if (!blItem.jornadas[tx.jornada]) {
+          blItem.jornadas[tx.jornada] = { peso: 0, bultos: 0 };
+        }
+        blItem.jornadas[tx.jornada].peso += tx.totalPeso;
+        blItem.jornadas[tx.jornada].bultos += tx.totalBultos;
+      }
+
+      // By bodega
+      const txBodegaKey = String(tx.bodega).toUpperCase();
+      const bodega = bodegasMap.get(txBodegaKey);
+      if (bodega) {
+        bodega.pesoDescargado += tx.totalPeso;
+        bodega.bultosDescargados += tx.totalBultos;
+
+        // By jornada for bodega
+        if (!bodega.jornadas[tx.jornada]) {
+          bodega.jornadas[tx.jornada] = { peso: 0, bultos: 0 };
+        }
+        bodega.jornadas[tx.jornada].peso += tx.totalPeso;
+        bodega.jornadas[tx.jornada].bultos += tx.totalBultos;
+      }
+    }
+
+    // Calculate percentages
+    for (const [, blItem] of blItemsMap) {
+      blItem.porcentajePeso =
+        blItem.pesoManifestado > 0
+          ? Number(((blItem.pesoDescargado / blItem.pesoManifestado) * 100).toFixed(2))
+          : 0;
+      blItem.porcentajeBultos =
+        blItem.bultosManifestados > 0
+          ? Number(((blItem.bultosDescargados / blItem.bultosManifestados) * 100).toFixed(2))
+          : 0;
+    }
+
+    for (const [, bodega] of bodegasMap) {
+      bodega.porcentajePeso =
+        bodega.pesoManifestado > 0
+          ? Number(((bodega.pesoDescargado / bodega.pesoManifestado) * 100).toFixed(2))
+          : 0;
+      bodega.porcentajeBultos =
+        bodega.bultosManifestados > 0
+          ? Number(((bodega.bultosDescargados / bodega.bultosManifestados) * 100).toFixed(2))
+          : 0;
+    }
+
+    return {
+      totalBultos,
+      totalPeso,
+      blItems: Array.from(blItemsMap.values()),
+      bodegas: Array.from(bodegasMap.values()),
+    };
   }
 }
