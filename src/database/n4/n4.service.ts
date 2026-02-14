@@ -9,8 +9,7 @@ import * as sql from 'mssql';
 import { N4Queries } from './n4.queries';
 import {
   AppointmentResult,
-  BLItemResult,
-  BodegaResult,
+  VesselOperationItemResult,
   ManifestResult,
   TransactionResult,
 } from './n4.interfaces';
@@ -77,47 +76,28 @@ export class N4Service implements OnModuleInit, OnModuleDestroy {
   // BL ITEMS METHODS
   // ============================================
 
-  async getBLItems(cvGkey: number): Promise<BLItemResult[]> {
+  async getBLItems(cvGkey: number, isAs: boolean): Promise<VesselOperationItemResult[]> {
     try {
       const request = this.pool.request();
       request.input('cvGkey', sql.BigInt, cvGkey);
 
-      const result = await request.query<BLItemResult>(N4Queries.getBLItems);
+      const result = await request.query<VesselOperationItemResult>(isAs ? N4Queries.getBLItemsAS : N4Queries.getBLItems);
       return result.recordset;
     } catch (error) {
       this.logger.error(`Error getting BL items for cvGkey ${cvGkey}`, error);
       throw error;
     }
   }
-
-  async getBLItemsAcopio(cvGkey: number): Promise<BLItemResult[]> {
-    try {
-      const request = this.pool.request();
-      request.input('cvGkey', sql.BigInt, cvGkey);
-
-      const result = await request.query<BLItemResult>(
-        N4Queries.getBLItemsAcopio,
-      );
-      return result.recordset;
-    } catch (error) {
-      this.logger.error(
-        `Error getting BL items (acopio) for cvGkey ${cvGkey}`,
-        error,
-      );
-      throw error;
-    }
-  }
-
   // ============================================
-  // BODEGAS METHODS
+  // HOLDS METHODS
   // ============================================
 
-  async getBodegas(vvdGkey: number): Promise<BodegaResult[]> {
+  async getHolds(vvdGkey: number): Promise<VesselOperationItemResult[]> {
     try {
       const request = this.pool.request();
       request.input('vvdGkey', sql.BigInt, vvdGkey);
 
-      const result = await request.query<BodegaResult>(N4Queries.getBodegas);
+      const result = await request.query<VesselOperationItemResult>(N4Queries.getHolds);
       return result.recordset;
     } catch (error) {
       this.logger.error(`Error getting bodegas for vvdGkey ${vvdGkey}`, error);
@@ -129,8 +109,9 @@ export class N4Service implements OnModuleInit, OnModuleDestroy {
   // TRANSACTION METHODS
   // ============================================
 
-  async getTransactionsAcopio(
+  async getTransactions(
     blItemGkeys: number[],
+    isGateTransaction: boolean,
   ): Promise<TransactionResult[]> {
     if (blItemGkeys.length === 0) return [];
 
@@ -139,67 +120,13 @@ export class N4Service implements OnModuleInit, OnModuleDestroy {
       request.input('blItemGkeys', sql.VarChar, blItemGkeys.join(','));
 
       const result = await request.query<TransactionResult>(
-        N4Queries.getTransactionsAcopio,
+        isGateTransaction ? N4Queries.getGateTransactions : N4Queries.getControlPesajeTransactions,
       );
       return result.recordset;
     } catch (error) {
       this.logger.error('Error getting ACOPIO transactions', error);
       throw error;
     }
-  }
-
-  async getTransactionsEmbarqueIndirecto(
-    blItemGkeys: number[],
-  ): Promise<TransactionResult[]> {
-    if (blItemGkeys.length === 0) return [];
-
-    try {
-      const request = this.pool.request();
-      request.input('blItemGkeys', sql.VarChar, blItemGkeys.join(','));
-
-      const result = await request.query<TransactionResult>(
-        N4Queries.getTransactionsEmbarqueIndirecto,
-      );
-      return result.recordset;
-    } catch (error) {
-      this.logger.error('Error getting EMBARQUE_INDIRECTO transactions', error);
-      throw error;
-    }
-  }
-
-  async getTransactionsDespacho(
-    blItemGkeys: number[],
-  ): Promise<TransactionResult[]> {
-    if (blItemGkeys.length === 0) return [];
-
-    try {
-      const request = this.pool.request();
-      request.input('blItemGkeys', sql.VarChar, blItemGkeys.join(','));
-
-      const result = await request.query<TransactionResult>(
-        N4Queries.getTransactionsDespacho,
-      );
-      return result.recordset;
-    } catch (error) {
-      this.logger.error('Error getting DESPACHO transactions', error);
-      throw error;
-    }
-  }
-
-  async getTransactionsEmbarqueDirecto(
-    blItemGkeys: number[],
-  ): Promise<TransactionResult[]> {
-    // TODO: Implement when query is ready
-    this.logger.warn('EMBARQUE_DIRECTO transactions not yet implemented');
-    return [];
-  }
-
-  async getTransactionsDescarga(
-    blItemGkeys: number[],
-  ): Promise<TransactionResult[]> {
-    // TODO: Implement when query is ready
-    this.logger.warn('DESCARGA transactions not yet implemented');
-    return [];
   }
 
   // ============================================

@@ -2,16 +2,18 @@
  * Redis cache key patterns
  */
 export const CACHE_KEYS = {
-  // Shipping module keys
-  manifest: (manifestId: string) => `shipping:manifest:${manifestId}`,
-  bodegas: (vvdGkey: number) => `shipping:bodegas:${vvdGkey}`,
-  blItems: (cvGkey: number, pattern: 'SSP' | 'OS') =>
-    `shipping:blitems:${cvGkey}:${pattern}`,
-  transactions: (manifestId: string, operationType: string) =>
-    `shipping:transactions:${manifestId}:${operationType}`,
+  manifest: (manifestId: string) => `manifest:${manifestId}`,
+  // Monitoring General Cargo keys
+  vesselOperations: (manifestId: string, operationType: string) => `monitoring:general-cargo:operation-vessel:${manifestId}:${operationType}`,
 
-  // Active manifests tracking
-  activeManifests: 'shipping:active-manifests',
+  holds: (vvdGkey: number) => `monitoring:general-cargo:holds:${vvdGkey}`,
+  blItems: (cvGkey: number, isAs: boolean) =>
+    `monitoring:general-cargo:blitems:${cvGkey}:${isAs ? 'AS' : 'NAS'}`,
+  transactions: (manifestId: string, operationType: string) =>
+    `monitoring:general-cargo:transactions:${manifestId}:${operationType}`,
+
+  // Active monitored operations (manifest:operationType pairs) for background job
+  monitoredOperations: 'monitoring:general-cargo:monitored-operations',
 
   // Appointments module keys
   appointmentsInProgress: 'appointments:in-progress',

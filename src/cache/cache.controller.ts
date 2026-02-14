@@ -7,7 +7,7 @@ import {
   UsePipes,
 } from '@nestjs/common';
 import { CacheManagementService } from './cache.service';
-import { OperationType } from '../shipping/enums/operation-type.enum';
+import { OperationType } from '../monitoring/general-cargo/enums/operation-type.enum';
 import { ParseOperationTypePipe } from './operation-type.pipe';
 
 @Controller('cache')

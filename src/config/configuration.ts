@@ -16,11 +16,11 @@ export default () => ({
   },
   jobs: {
     shippingRefreshInterval: parseInt(
-      process.env.SHIPPING_REFRESH_INTERVAL || '15000',
+      process.env.SHIPPING_REFRESH_INTERVAL || '30000',
       10,
     ),
     appointmentsRefreshInterval: parseInt(
-      process.env.APPOINTMENTS_REFRESH_INTERVAL || '5000',
+      process.env.APPOINTMENTS_REFRESH_INTERVAL || '30000',
       10,
     ),
   },

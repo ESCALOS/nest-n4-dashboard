@@ -2,10 +2,10 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import configuration from './config/configuration';
 import { DatabaseModule } from './database/database.module';
-import { ShippingModule } from './shipping/shipping.module';
 import { AppointmentsModule } from './appointments/appointments.module';
 import { CacheManagementModule } from './cache/cache.module';
 import { JobsModule } from './jobs/jobs.module';
+import { GeneralCargoModule } from './monitoring/general-cargo/general-cargo.module';
 
 @Module({
   imports: [
@@ -20,16 +20,17 @@ import { JobsModule } from './jobs/jobs.module';
     DatabaseModule,
 
     // Business modules
-    ShippingModule,
     AppointmentsModule,
+    GeneralCargoModule,
 
     // Cache management
     CacheManagementModule,
 
     // Background jobs
     JobsModule,
+
   ],
   controllers: [],
   providers: [],
 })
-export class AppModule {}
+export class AppModule { }

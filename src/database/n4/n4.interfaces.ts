@@ -1,29 +1,23 @@
 export interface ManifestResult {
     gkey: number;
     vvd_gkey: number;
-    name: string;
+    vessel_name: string;
 }
 
-export interface BLItemResult {
+export interface VesselOperationItemResult {
     gkey: number;
     nbr: string;
-    pesoManifestado: number;
-    bultosManifestados: number;
-}
-
-export interface BodegaResult {
-    gkey: number;
-    nbr: string;
-    pesoManifestado: number;
-    bultosManifestados: number;
+    manifested_weight: number;
+    manifested_goods: number;
 }
 
 export interface TransactionResult {
-    bodega: string;
-    blItemGkey: number;
-    jornada: string;
-    totalBultos: number;
-    totalPeso: number;
+    hold: string;
+    bl_item_gkey: number;
+    shift: string;
+    total_goods: number;
+    total_weight: number;
+    total_tickets: number;
 }
 
 export interface AppointmentResult {

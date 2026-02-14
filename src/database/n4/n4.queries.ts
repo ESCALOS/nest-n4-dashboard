@@ -10,10 +10,10 @@ export const N4Queries = {
 
     /**
      * Get manifest information by manifest ID
-     * Returns: gkey, vvd_gkey, vessel name
+     * Returns: gkey, vvd_gkey, vessel_name
      */
     getManifest: `
-    SELECT acv.gkey, vis.vvd_gkey, vv.name
+    SELECT acv.gkey, vis.vvd_gkey, vv.name AS vessel_name
     FROM argo_carrier_visit acv
     INNER JOIN vsl_vessel_visit_details vis ON vis.vvd_gkey = acv.cvcvd_gkey
     INNER JOIN vsl_vessels vv ON vv.gkey = vis.vessel_gkey
@@ -25,66 +25,67 @@ export const N4Queries = {
     // ============================================
 
     /**
-     * Get BL Items for embarque/despacho (SSP pattern)
+     * Get BL Items for regular operations
      */
     getBLItems: `
     SELECT
       cbi.gkey AS gkey,
       cbi.nbr AS nbr,
-      COALESCE(TRY_CONVERT(DECIMAL(18,2), cbi.CUSTDFF_MANIFESTWEIGHT), 0) AS pesoManifestado,
-      COALESCE(TRY_CONVERT(INT, cbi.CUSTDFF_BULTOS), 0) AS bultosManifestados
+      COALESCE(TRY_CONVERT(DECIMAL(18,2), cbi.CUSTDFF_MANIFESTWEIGHT), 0) AS manifested_weight,
+      COALESCE(TRY_CONVERT(INT, cbi.CUSTDFF_BULTOS), 0) AS manifested_goods
     FROM crg_bl_item cbi
     INNER JOIN crg_bills_of_lading cbol ON cbol.gkey = cbi.bl_gkey
     WHERE cbol.cv_gkey = @cvGkey AND (cbi.flex_string01 <> 'Y' OR cbi.flex_string01 IS NULL)
   `,
 
     /**
-     * Get BL Items for acopio (OS pattern)
+     * Get BL Items for acopio -> AS false
      */
-    getBLItemsAcopio: `
+    getBLItemsAS: `
     SELECT
       cbi.gkey AS gkey,
       cbi.nbr AS nbr,
-      COALESCE(TRY_CONVERT(DECIMAL(18,2), cbi.CUSTDFF_MANIFESTWEIGHT), 0) AS pesoManifestado,
-      COALESCE(TRY_CONVERT(INT, cbi.CUSTDFF_BULTOS), 0) AS bultosManifestados
+      COALESCE(TRY_CONVERT(DECIMAL(18,2), cbi.CUSTDFF_MANIFESTWEIGHT), 0) AS manifested_weight,
+      COALESCE(TRY_CONVERT(INT, cbi.CUSTDFF_BULTOS), 0) AS manifested_goods
     FROM crg_bl_item cbi
     INNER JOIN crg_bills_of_lading cbol ON cbol.gkey = cbi.bl_gkey
     WHERE cbol.cv_gkey = @cvGkey AND cbi.flex_string01 = 'Y'
   `,
 
     // ============================================
-    // BODEGAS QUERY
+    // HOLDS QUERY
     // ============================================
 
     /**
-     * Get bodegas (warehouses) for a vessel visit
+     * Get holds for a vessel visit
      */
-    getBodegas: `
+    getHolds: `
     SELECT
       ccb.gkey AS gkey,
       ccb.CUSTOMCATBOG_DESCRIPCION AS nbr,
-      ISNULL(cr.CUSTOMRESUME_PESOMANIFESTADO, 0) AS pesoManifestado,
-      ISNULL(cr.CUSTOMRESUME_BULTOSMANIFESTADO, 0) AS bultosManifestados
+      ISNULL(cr.CUSTOMRESUME_PESOMANIFESTADO, 0) AS manifested_weight,
+      ISNULL(cr.CUSTOMRESUME_BULTOSMANIFESTADO, 0) AS manifested_goods
     FROM CUSTOM_RESUMENCARGA cr
     INNER JOIN CUSTOM_CATALOGO_BODEGAS ccb ON ccb.gkey = cr.CUSTOMRESUME_UBICACION1
     WHERE cr.CUSTOMRESUME_VESSELVISITIT = @vvdGkey
   `,
 
     // ============================================
-    // TRANSACTION QUERIES - SHIPPING MODULE
+    // TRANSACTION QUERIES - MONITORING GENERAL CARGO MODULE
     // ============================================
 
     /**
-     * Get ACOPIO transactions
+     * Get GATE transactions
      * Filtered by BL item gkeys
      */
-    getTransactionsAcopio: `
+    getGateTransactions: `
     SELECT
-        calc.bodega,
-        ISNULL(rtt.bl_item_gkey, 0) AS blItemGkey,
-        calc.jornada,
-        SUM(ISNULL(CAST(iu.flex_string09 AS INT), 0)) AS totalBultos,
-        SUM(ISNULL(rtt.ctr_gross_weight, 0)) AS totalPeso
+        calc.hold,
+        ISNULL(rtt.bl_item_gkey, 0) AS bl_item_gkey,
+        calc.shift,
+        COUNT(*) AS totalTickets,
+        SUM(ISNULL(CAST(iu.flex_string09 AS INT), 0)) AS total_goods,
+        SUM(ISNULL(rtt.ctr_gross_weight, 0)) AS total_weight
     FROM road_truck_transactions rtt
     LEFT JOIN inv_unit iu 
         ON iu.gkey = rtt.unit_gkey
@@ -96,7 +97,7 @@ export const N4Queries = {
     ) stg
     CROSS APPLY (
         SELECT
-            ISNULL(UPPER(iu.flex_string12), 'SIN BODEGA') AS bodega,
+            ISNULL(UPPER(iu.flex_string12), 'SIN BODEGA') AS hold,
             CASE
                 WHEN DATEPART(HOUR, stg.stage_end) < 8 THEN
                     FORMAT(stg.stage_end, 'dd-MM-yyyy') + ' 00:00 - 07:59'
@@ -104,32 +105,33 @@ export const N4Queries = {
                     FORMAT(stg.stage_end, 'dd-MM-yyyy') + ' 08:00 - 15:59'
                 ELSE
                     FORMAT(stg.stage_end, 'dd-MM-yyyy') + ' 16:00 - 23:59'
-            END AS jornada
+            END AS shift
     ) calc
     WHERE rtt.bl_item_gkey IN (SELECT value FROM STRING_SPLIT(@blItemGkeys, ','))
       AND rtt.status = 'COMPLETE'
       AND rtt.gate_gkey <> 54
     GROUP BY
-        calc.bodega,
+        calc.hold,
         ISNULL(rtt.bl_item_gkey, 0),
-        calc.jornada
+        calc.shift
     ORDER BY
-        calc.bodega,
-        blItemGkey,
-        calc.jornada
+        calc.hold,
+        bl_item_gkey,
+        calc.shift
   `,
 
     /**
-     * Get EMBARQUE_INDIRECTO transactions
+     * Get CONTROL_PESAJE transactions
      * Filtered by BL item gkeys
      */
-    getTransactionsEmbarqueIndirecto: `
+    getControlPesajeTransactions: `
     SELECT
-        calc.bodega,
-        ISNULL(ciwt.CUSTOMWGTRAN_BL_ITEM, 0) AS blItemGkey,
-        calc.jornada,
-        SUM(ISNULL(CAST(iu.flex_string09 AS INT), 0)) AS totalBultos,
-        SUM(ISNULL(ciwt.CUSTOMWGTRAN_NETWEIGHT, 0)) AS totalPeso
+        calc.hold,
+        ISNULL(ciwt.CUSTOMWGTRAN_BL_ITEM, 0) AS bl_item_gkey,
+        calc.shift,
+        COUNT(*) AS total_tickets,
+        SUM(ISNULL(CAST(iu.flex_string09 AS INT), 0)) AS total_goods,
+        SUM(ISNULL(ciwt.CUSTOMWGTRAN_NETWEIGHT, 0)) AS total_weight
     FROM CUSTOM_IND_WEIGHING_TRANS ciwt
     LEFT JOIN inv_unit iu 
         ON iu.id = ciwt.CUSTOMWGTRAN_CTRNBR
@@ -140,7 +142,7 @@ export const N4Queries = {
         AND evento.event_type_gkey = 17
     CROSS APPLY (
         SELECT
-            ISNULL(UPPER(iu.flex_string12), 'SIN BODEGA') AS bodega,
+            ISNULL(UPPER(iu.flex_string12), 'SIN BODEGA') AS hold,
             CASE
                 WHEN DATEPART(HOUR, evento.placed_time) < 8 THEN
                     FORMAT(evento.placed_time, 'dd-MM-yyyy') + ' 00:00 - 07:59'
@@ -148,71 +150,19 @@ export const N4Queries = {
                     FORMAT(evento.placed_time, 'dd-MM-yyyy') + ' 08:00 - 15:59'
                 ELSE
                     FORMAT(evento.placed_time, 'dd-MM-yyyy') + ' 16:00 - 23:59'
-            END AS jornada
+            END AS shift
     ) calc
     WHERE iu.category = 'EXPRT'
       AND fcy.transit_state = 'S60_LOADED'
       AND ciwt.CUSTOMWGTRAN_BL_ITEM IN (SELECT value FROM STRING_SPLIT(@blItemGkeys, ','))
     GROUP BY
-        calc.bodega,
+        calc.hold,
         ISNULL(ciwt.CUSTOMWGTRAN_BL_ITEM, 0),
-        calc.jornada
+        calc.shift
     ORDER BY
-        calc.bodega,
-        blItemGkey,
-        calc.jornada
-  `,
-
-    getTransactionsDespacho: `
-    SELECT
-        calc.bodega,
-        ISNULL(rtt.bl_item_gkey, 0) AS blItemGkey,
-        calc.jornada,
-        SUM(ISNULL(CAST(iu.flex_string09 AS INT), 0)) AS totalBultos,
-        SUM(ISNULL(rtt.ctr_gross_weight, 0)) AS totalPeso
-    FROM road_truck_transactions rtt
-    LEFT JOIN inv_unit iu 
-        ON iu.gkey = rtt.unit_gkey
-    CROSS APPLY (
-        SELECT TOP 1 s.stage_end
-        FROM road_truck_transaction_stages s
-        WHERE s.tran_gkey = rtt.gkey
-        ORDER BY s.seq DESC
-    ) stg
-    CROSS APPLY (
-        SELECT
-            ISNULL(UPPER(iu.flex_string12), 'SIN BODEGA') AS bodega,
-            CASE
-                WHEN DATEPART(HOUR, stg.stage_end) < 8 THEN
-                    FORMAT(stg.stage_end, 'dd-MM-yyyy') + ' 00:00 - 07:59'
-                WHEN DATEPART(HOUR, stg.stage_end) < 16 THEN
-                    FORMAT(stg.stage_end, 'dd-MM-yyyy') + ' 08:00 - 15:59'
-                ELSE
-                    FORMAT(stg.stage_end, 'dd-MM-yyyy') + ' 16:00 - 23:59'
-            END AS jornada
-    ) calc
-    WHERE rtt.bl_item_gkey IN (SELECT value FROM STRING_SPLIT(@blItemGkeys, ','))
-      AND rtt.status = 'COMPLETE'
-      AND rtt.gate_gkey <> 54
-    GROUP BY
-        calc.bodega,
-        ISNULL(rtt.bl_item_gkey, 0),
-        calc.jornada
-    ORDER BY
-        calc.bodega,
-        blItemGkey,
-        calc.jornada;
-  `,
-
-    // Placeholder for future transaction types
-    getTransactionsEmbarqueDirecto: `
-    -- TODO: Implement EMBARQUE_DIRECTO query
-    SELECT 1 WHERE 1=0
-  `,
-
-    getTransactionsDescarga: `
-    -- TODO: Implement DESCARGA query
-    SELECT 1 WHERE 1=0
+        calc.hold,
+        bl_item_gkey,
+        calc.shift
   `,
 
     // ============================================

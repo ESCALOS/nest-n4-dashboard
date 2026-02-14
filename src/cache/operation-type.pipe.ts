@@ -3,7 +3,7 @@ import {
     Injectable,
     BadRequestException,
 } from '@nestjs/common';
-import { OperationType } from '../shipping/enums/operation-type.enum';
+import { OperationType } from '../monitoring/general-cargo/enums/operation-type.enum';
 
 @Injectable()
 export class ParseOperationTypePipe implements PipeTransform<string, OperationType> {

@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { RedisService } from '../database/redis/redis.service';
 import { CACHE_KEYS } from '../common/constants/cache-keys.constant';
-import { OperationType } from '../shipping/enums/operation-type.enum';
+import { OperationType } from '../monitoring/general-cargo/enums/operation-type.enum';
 
 @Injectable()
 export class CacheManagementService {
@@ -23,7 +23,7 @@ export class CacheManagementService {
     manifestId: string,
     operationType: OperationType,
   ): Promise<void> {
-    const trackingKey = CACHE_KEYS.activeManifests;
+    const trackingKey = CACHE_KEYS.monitoredOperations;
     const fullKey = `${trackingKey}:${operationType}`;
     await this.redisService.sadd(fullKey, manifestId);
     this.logger.log(`Added manifest ${manifestId} to tracking for ${operationType}`);
@@ -36,7 +36,7 @@ export class CacheManagementService {
     manifestId: string,
     operationType: OperationType,
   ): Promise<void> {
-    const trackingKey = CACHE_KEYS.activeManifests;
+    const trackingKey = CACHE_KEYS.monitoredOperations;
     const fullKey = `${trackingKey}:${operationType}`;
     await this.redisService.srem(fullKey, manifestId);
     this.logger.log(`Removed manifest ${manifestId} from tracking for ${operationType}`);
@@ -48,7 +48,7 @@ export class CacheManagementService {
   async getActiveManifestsByOperation(
     operationType: OperationType,
   ): Promise<string[]> {
-    const trackingKey = CACHE_KEYS.activeManifests;
+    const trackingKey = CACHE_KEYS.monitoredOperations;
     const fullKey = `${trackingKey}:${operationType}`;
     return this.redisService.smembers(fullKey);
   }
@@ -76,7 +76,7 @@ export class CacheManagementService {
    * Reset bodegas cache for a specific vessel visit
    */
   async resetBodegas(vvdGkey: number): Promise<void> {
-    const cacheKey = CACHE_KEYS.bodegas(vvdGkey);
+    const cacheKey = CACHE_KEYS.holds(vvdGkey);
     await this.redisService.del(cacheKey);
     this.logger.log(`Reset bodegas cache for vvdGkey ${vvdGkey}`);
   }
@@ -86,12 +86,12 @@ export class CacheManagementService {
    */
   async resetBLItems(cvGkey: number): Promise<void> {
     // Reset both SSP and OS patterns
-    const sspKey = CACHE_KEYS.blItems(cvGkey, 'SSP');
-    const osKey = CACHE_KEYS.blItems(cvGkey, 'OS');
+    const asKey = CACHE_KEYS.blItems(cvGkey, true);
+    const nasKey = CACHE_KEYS.blItems(cvGkey, false);
 
     await Promise.all([
-      this.redisService.del(sspKey),
-      this.redisService.del(osKey),
+      this.redisService.del(asKey),
+      this.redisService.del(nasKey),
     ]);
 
     this.logger.log(`Reset BL items cache for cvGkey ${cvGkey}`);
@@ -125,7 +125,7 @@ export class CacheManagementService {
     await this.redisService.del(manifestKey);
 
     // Reset transactions for all operation types
-    const transactionPattern = `shipping:transactions:${manifestId}:*`;
+    const transactionPattern = `monitoring:general-cargo:transactions:${manifestId}:*`;
     const transactionsDeleted =
       await this.redisService.deleteByPattern(transactionPattern);
 
@@ -149,15 +149,15 @@ export class CacheManagementService {
    * Get list of active manifests being tracked (all operation types)
    */
   async getActiveManifests(): Promise<string[]> {
-    return this.redisService.smembers(CACHE_KEYS.activeManifests);
+    return this.redisService.smembers(CACHE_KEYS.monitoredOperations);
   }
 
   /**
    * Remove a manifest from active tracking (all operation types)
    */
   async removeFromActiveManifests(manifestId: string): Promise<void> {
-    await this.redisService.srem(CACHE_KEYS.activeManifests, manifestId);
-    this.logger.log(`Removed ${manifestId} from active manifests`);
+    await this.redisService.srem(CACHE_KEYS.monitoredOperations, manifestId);
+    this.logger.log(`Removed ${manifestId} from monitored operations tracking`);
   }
 
   /**
@@ -165,11 +165,10 @@ export class CacheManagementService {
    */
   async getAllActiveManifestsGrouped(): Promise<Record<OperationType, string[]>> {
     const result: Record<OperationType, string[]> = {
-      [OperationType.ACOPIO]: [],
-      [OperationType.EMBARQUE_INDIRECTO]: [],
-      [OperationType.DESPACHO]: [],
-      [OperationType.EMBARQUE_DIRECTO]: [],
-      [OperationType.DESCARGA]: [],
+      [OperationType.STOCKPILING]: [],
+      [OperationType.INDIRECT_LOADING]: [],
+      [OperationType.DISPATCHING]: [],
+      [OperationType.DIRECT_LOADING]: [],
     };
 
     for (const opType of Object.values(OperationType)) {
