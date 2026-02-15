@@ -1,20 +1,18 @@
 export class AppointmentInProgressDto {
   cita: string;
-  fecha: Date | null;
-  booking: string;
+  fechaCita: Date | null;
+  fechaStage: Date | null;
+  stage: string;
+  tiempo: number | null;
   linea: string;
+  booking: string;
+  placa: string;
   cliente: string;
-  contenedor: string;
   tecnologia: string;
   producto: string;
+  contenedor: string;
   nave: string;
-  placa: string;
   carreta: string;
-  stage: string;
-  tranquera: Date | null;
-  preGate: Date | null;
-  gateIn: Date | null;
-  yard: Date | null;
   tipo: string;
 }
 

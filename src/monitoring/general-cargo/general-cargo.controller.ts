@@ -9,8 +9,9 @@ import {
   Logger,
   ValidationPipe,
 } from '@nestjs/common';
-import { Observable, Subject, switchMap, startWith, map, finalize } from 'rxjs';
+import { Observable, switchMap, startWith, map, finalize } from 'rxjs';
 import { GeneralCargoService } from './general-cargo.service';
+import { GeneralCargoEventService } from './general-cargo-event.service';
 import { OperationVesselRequestDto } from './dto/operation-vessel-request.dto';
 import { MonitoringGeneralCargoResponse } from './dto/operation-vessel-response.dto';
 import { OperationType } from './enums/operation-type.enum';
@@ -26,21 +27,10 @@ interface MessageEvent {
 export class GeneralCargoController {
   private readonly logger = new Logger(GeneralCargoController.name);
 
-  /** Subject to push refresh signals from the background job */
-  private readonly refreshSubject = new Subject<void>();
-
-  /** Subject to push signals when monitored operations list changes */
-  private readonly operationsSubject = new Subject<void>();
-
-  constructor(private readonly generalCargoService: GeneralCargoService) { }
-
-  /**
-   * Called by the background job when transactions are refreshed.
-   * Pushes a signal so all active SSE connections re-emit data.
-   */
-  notifyRefresh(): void {
-    this.refreshSubject.next();
-  }
+  constructor(
+    private readonly generalCargoService: GeneralCargoService,
+    private readonly eventService: GeneralCargoEventService,
+  ) { }
 
   /**
    * SSE endpoint — the frontend subscribes here to receive
@@ -59,7 +49,7 @@ export class GeneralCargoController {
     );
 
     // Emit immediately, then on every refresh signal
-    return this.refreshSubject.pipe(
+    return this.eventService.refresh$.pipe(
       startWith(undefined),
       switchMap(() =>
         this.fetchData(manifest_id, operation_type),
@@ -85,7 +75,7 @@ export class GeneralCargoController {
   operationsStream(): Observable<MessageEvent> {
     this.logger.log('SSE operations connection opened');
 
-    return this.operationsSubject.pipe(
+    return this.eventService.operations$.pipe(
       startWith(undefined),
       switchMap(() =>
         new Observable<MessageEvent>((subscriber) => {
@@ -123,7 +113,7 @@ export class GeneralCargoController {
       body.manifest_id,
       body.operation_type,
     );
-    this.operationsSubject.next();
+    this.eventService.notifyOperationsChanged();
     return {
       success: true,
       message: `Operation ${body.manifest_id}/${body.operation_type} added to monitoring`,
@@ -154,7 +144,7 @@ export class GeneralCargoController {
       body.manifest_id,
       body.operation_type,
     );
-    this.operationsSubject.next();
+    this.eventService.notifyOperationsChanged();
     return {
       success: true,
       message: `Operation ${body.manifest_id}/${body.operation_type} removed from monitoring`,

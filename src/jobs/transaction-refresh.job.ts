@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { GeneralCargoService } from '../monitoring/general-cargo/general-cargo.service';
-import { GeneralCargoController } from '../monitoring/general-cargo/general-cargo.controller';
+import { GeneralCargoEventService } from '../monitoring/general-cargo/general-cargo-event.service';
 
 @Injectable()
 export class TransactionRefreshJob {
@@ -10,7 +10,7 @@ export class TransactionRefreshJob {
 
   constructor(
     private readonly generalCargoService: GeneralCargoService,
-    private readonly generalCargoController: GeneralCargoController,
+    private readonly eventService: GeneralCargoEventService,
   ) { }
 
   /**
@@ -56,7 +56,7 @@ export class TransactionRefreshJob {
       }
 
       // Notify SSE clients that data has been refreshed
-      this.generalCargoController.notifyRefresh();
+      this.eventService.notifyRefresh();
 
       const duration = Date.now() - startTime;
       this.logger.debug(

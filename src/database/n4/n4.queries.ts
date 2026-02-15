@@ -176,7 +176,7 @@ export const N4Queries = {
     getAppointmentsInProgress: `
     SELECT
         appt.id AS Cita,
-        slot.start_date AS Fecha,
+        DATEADD(HOUR, 5, slot.start_date) AS Fecha,
         gat.eqo_nbr AS Booking,
         gat.line_id AS Linea,
         shi.name AS Cliente,
@@ -190,10 +190,10 @@ export const N4Queries = {
             WHEN gat.stage_id IN ('pre-gate', 'pre_gate') THEN 'pre_gate'
             ELSE gat.stage_id
         END AS Stage,
-        stg.Tranquera,
-        stg.PreGate,
-        stg.GateIn,
-        stg.Yard,
+        DATEADD(HOUR, 5, stg.Tranquera) AS Tranquera,
+        DATEADD(HOUR, 5, stg.PreGate) AS PreGate,
+        DATEADD(HOUR, 5, stg.GateIn) AS GateIn,
+        DATEADD(HOUR, 5, stg.Yard) AS Yard,
         CASE gat.sub_type
             WHEN 'RE' THEN 'Recepción Full'
             WHEN 'DM' THEN 'Despacho'

@@ -1,13 +1,17 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { AppointmentsService } from '../appointments/appointments.service';
+import { AppointmentsEventService } from '../appointments/appointments-event.service';
 
 @Injectable()
 export class AppointmentsRefreshJob {
   private readonly logger = new Logger(AppointmentsRefreshJob.name);
   private isRunning = false;
 
-  constructor(private readonly appointmentsService: AppointmentsService) {}
+  constructor(
+    private readonly appointmentsService: AppointmentsService,
+    private readonly eventService: AppointmentsEventService,
+  ) { }
 
   /**
    * Refresh appointments in progress every 30 seconds
@@ -26,6 +30,9 @@ export class AppointmentsRefreshJob {
 
     try {
       await this.appointmentsService.fetchAndCacheAppointments();
+
+      // Notify SSE clients that data has been refreshed
+      this.eventService.notifyRefresh();
 
       const duration = Date.now() - startTime;
       this.logger.debug(`Appointments refresh completed in ${duration}ms`);
