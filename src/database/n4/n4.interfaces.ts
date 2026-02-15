@@ -20,6 +20,20 @@ export interface TransactionResult {
     total_tickets: number;
 }
 
+export interface StockpilingTicket {
+    codigo: string;
+    blItemNbr: string;
+    gRemision: string;
+    gTransportista: string;
+    pesoIngreso: number;
+    pesoSalida: number;
+    pesoNeto: number;
+    tracto: string;
+    carreta: string;
+    conductor: string;
+    fechaSalida: string;
+}
+
 export interface AppointmentResult {
     Cita: string;
     Fecha: Date;

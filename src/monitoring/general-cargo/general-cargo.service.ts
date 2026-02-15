@@ -14,6 +14,7 @@ import {
   MonitoringGeneralCargoResponse,
   VesselData,
 } from './dto/operation-vessel-response.dto';
+import { StockpilingTicketDto } from './dto/stockpiling-ticket.dto';
 
 @Injectable()
 export class GeneralCargoService {
@@ -149,6 +150,12 @@ export class GeneralCargoService {
     await this.redisService.setJson(cacheKey, transactions);
 
     return transactions;
+  }
+
+  async getStockpilingTickets(blItemGkeys: number[]): Promise<StockpilingTicketDto[]> {
+    if (blItemGkeys.length === 0) return [];
+
+    return await this.n4Service.getStockpilingTickets(blItemGkeys);
   }
 
   // ============================================

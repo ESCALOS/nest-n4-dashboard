@@ -12,6 +12,7 @@ import {
   VesselOperationItemResult,
   ManifestResult,
   TransactionResult,
+  StockpilingTicket,
 } from './n4.interfaces';
 
 @Injectable()
@@ -125,6 +126,21 @@ export class N4Service implements OnModuleInit, OnModuleDestroy {
       return result.recordset;
     } catch (error) {
       this.logger.error('Error getting ACOPIO transactions', error);
+      throw error;
+    }
+  }
+
+  async getStockpilingTickets(blItemGkeys: number[]): Promise<StockpilingTicket[]> {
+    if (blItemGkeys.length === 0) return [];
+
+    try {
+      const request = this.pool.request();
+      request.input('blItemGkeys', sql.VarChar, blItemGkeys.join(','));
+
+      const result = await request.query<StockpilingTicket>(N4Queries.getStockpilingTickets);
+      return result.recordset;
+    } catch (error) {
+      this.logger.error('Error getting STOCKPILING tickets', error);
       throw error;
     }
   }

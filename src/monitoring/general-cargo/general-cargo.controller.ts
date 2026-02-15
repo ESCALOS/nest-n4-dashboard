@@ -151,6 +151,24 @@ export class GeneralCargoController {
     };
   }
 
+  /**
+   * Get stockpiling tickets detail
+   * GET /monitoring/general-cargo/stockpiling-tickets?blItemGkeys=123,456,789
+   */
+  @Get('stockpiling-tickets')
+  async getStockpilingTickets(
+    @Query('blItemGkeys') blItemGkeys: string,
+  ): Promise<{ success: boolean; data: any[] }> {
+    if (!blItemGkeys) {
+      return { success: true, data: [] };
+    }
+
+    const gkeys = blItemGkeys.split(',').map(Number).filter(n => !isNaN(n));
+    const tickets = await this.generalCargoService.getStockpilingTickets(gkeys);
+
+    return { success: true, data: tickets };
+  }
+
   // ============================================
   // INTERNAL
   // ============================================

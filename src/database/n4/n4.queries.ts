@@ -165,6 +165,44 @@ export const N4Queries = {
         calc.shift
   `,
 
+
+    // ============================================
+    // STOCKPILING TICKETS QUERY
+    // ============================================
+
+    /**
+     * Get stockpiling tickets detail
+     * Returns detailed information of tickets for stockpiling operations
+     */
+    getStockpilingTickets: `
+    SELECT
+        rtt.nbr AS codigo,
+        cbi.nbr AS blItemNbr,
+        rtt.flex_string20 AS gRemision,
+        rtt.flex_string21 AS gTransportista,
+        ISNULL(rtt.scale_weight, 0) AS pesoIngreso,
+        ISNULL(rtt.truck_tare_weight, 0) AS pesoSalida,
+        ISNULL(rtt.scale_weight, 0) - ISNULL(rtt.truck_tare_weight, 0) AS pesoNeto,
+        ISNULL(truc.truck_id, '') AS tracto,
+        ISNULL(rtt.chs_id, '') AS carreta,
+        ISNULL(truc.driver_name, '') AS conductor,
+        ISNULL(CONVERT(VARCHAR, stg.fechaSalida, 120), '') AS fechaSalida
+    FROM road_truck_transactions rtt
+    INNER JOIN crg_bl_item cbi ON cbi.gkey = rtt.bl_item_gkey
+    LEFT JOIN road_truck_visit_details truc ON truc.tvdtls_gkey = rtt.truck_visit_gkey
+    OUTER APPLY (
+        SELECT
+            MAX(CASE WHEN s.id = 'gate_out' THEN s.stage_end END) AS fechaSalida
+        FROM road_truck_transaction_stages s
+        WHERE s.tran_gkey = rtt.gkey
+    ) stg
+    WHERE rtt.bl_item_gkey IN (SELECT value FROM STRING_SPLIT(@blItemGkeys, ','))
+      AND rtt.status = 'COMPLETE'
+      AND rtt.gate_gkey <> 54
+    ORDER BY
+        cbi.nbr,
+        stg.fechaSalida;
+  `,
     // ============================================
     // APPOINTMENTS QUERIES - CONTAINERS MODULE
     // ============================================
@@ -230,4 +268,5 @@ export const N4Queries = {
     LEFT JOIN vsl_vessels ves ON ves.gkey = vis.vessel_gkey
     LEFT JOIN road_appt_time_slot slot ON slot.gkey = appt.time_slot_gkey
   `,
+
 };
