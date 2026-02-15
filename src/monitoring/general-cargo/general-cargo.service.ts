@@ -158,6 +158,32 @@ export class GeneralCargoService {
     return await this.n4Service.getStockpilingTickets(blItemGkeys);
   }
 
+  /**
+   * Invalidate holds cache and re-fetch from N4.
+   */
+  async refreshHolds(manifestId: string): Promise<OperationVesselItemDto[]> {
+    const manifest = await this.getManifest(manifestId);
+    const cacheKey = CACHE_KEYS.holds(manifest.vvdGkey);
+    await this.redisService.del(cacheKey);
+    this.logger.log(`Cache invalidated for holds vvdGkey ${manifest.vvdGkey}`);
+    return this.getHolds(manifestId);
+  }
+
+  /**
+   * Invalidate BL items (services) cache and re-fetch from N4.
+   */
+  async refreshBLItems(
+    manifestId: string,
+    operationType: OperationType,
+  ): Promise<OperationVesselItemDto[]> {
+    const manifest = await this.getManifest(manifestId);
+    const isAs = IS_BL_ITEM_AS[operationType];
+    const cacheKey = CACHE_KEYS.blItems(manifest.gkey, isAs);
+    await this.redisService.del(cacheKey);
+    this.logger.log(`Cache invalidated for BL items cvGkey ${manifest.gkey} isAs ${isAs}`);
+    return this.getBLItems(manifestId, operationType);
+  }
+
   // ============================================
   // MONITORED OPERATIONS MANAGEMENT
   // ============================================

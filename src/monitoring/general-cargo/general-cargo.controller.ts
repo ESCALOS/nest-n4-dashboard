@@ -152,6 +152,43 @@ export class GeneralCargoController {
   }
 
   /**
+   * Force refresh of holds (invalidate cache and re-fetch from N4).
+   * POST /monitoring/general-cargo/refresh-holds
+   */
+  @Post('refresh-holds')
+  async refreshHolds(
+    @Body(new ValidationPipe({ transform: true }))
+    body: OperationVesselRequestDto,
+  ): Promise<{ success: boolean; message: string }> {
+    await this.generalCargoService.refreshHolds(body.manifest_id);
+    this.eventService.notifyRefresh();
+    return {
+      success: true,
+      message: `Holds refreshed for manifest ${body.manifest_id}`,
+    };
+  }
+
+  /**
+   * Force refresh of BL items / services (invalidate cache and re-fetch from N4).
+   * POST /monitoring/general-cargo/refresh-services
+   */
+  @Post('refresh-services')
+  async refreshServices(
+    @Body(new ValidationPipe({ transform: true }))
+    body: OperationVesselRequestDto,
+  ): Promise<{ success: boolean; message: string }> {
+    await this.generalCargoService.refreshBLItems(
+      body.manifest_id,
+      body.operation_type,
+    );
+    this.eventService.notifyRefresh();
+    return {
+      success: true,
+      message: `Services refreshed for manifest ${body.manifest_id}/${body.operation_type}`,
+    };
+  }
+
+  /**
    * Get stockpiling tickets detail
    * GET /monitoring/general-cargo/stockpiling-tickets?blItemGkeys=123,456,789
    */
