@@ -29,6 +29,9 @@ export class GeneralCargoController {
   /** Subject to push refresh signals from the background job */
   private readonly refreshSubject = new Subject<void>();
 
+  /** Subject to push signals when monitored operations list changes */
+  private readonly operationsSubject = new Subject<void>();
+
   constructor(private readonly generalCargoService: GeneralCargoService) { }
 
   /**
@@ -72,6 +75,37 @@ export class GeneralCargoController {
     );
   }
 
+  /**
+   * SSE endpoint — clients subscribe here to receive the
+   * updated list of monitored operations whenever it changes.
+   *
+   * GET /monitoring/general-cargo/operations/stream
+   */
+  @Sse('operations/stream')
+  operationsStream(): Observable<MessageEvent> {
+    this.logger.log('SSE operations connection opened');
+
+    return this.operationsSubject.pipe(
+      startWith(undefined),
+      switchMap(() =>
+        new Observable<MessageEvent>((subscriber) => {
+          this.generalCargoService
+            .getMonitoredOperations()
+            .then((operations) => {
+              subscriber.next({ data: operations });
+              subscriber.complete();
+            })
+            .catch((err) => {
+              this.logger.error(`Error fetching monitored operations: ${err.message}`);
+              subscriber.next({ data: [] });
+              subscriber.complete();
+            });
+        }),
+      ),
+      finalize(() => this.logger.log('SSE operations connection closed')),
+    );
+  }
+
   // ============================================
   // MONITORED OPERATIONS CRUD
   // ============================================
@@ -89,6 +123,7 @@ export class GeneralCargoController {
       body.manifest_id,
       body.operation_type,
     );
+    this.operationsSubject.next();
     return {
       success: true,
       message: `Operation ${body.manifest_id}/${body.operation_type} added to monitoring`,
@@ -119,6 +154,7 @@ export class GeneralCargoController {
       body.manifest_id,
       body.operation_type,
     );
+    this.operationsSubject.next();
     return {
       success: true,
       message: `Operation ${body.manifest_id}/${body.operation_type} removed from monitoring`,

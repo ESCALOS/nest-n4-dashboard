@@ -39,7 +39,7 @@ export class GeneralCargoService {
 
     const result = await this.n4Service.getManifest(manifestId);
     if (!result) {
-      throw new NotFoundException(`Manifest with ID ${manifestId} not found`);
+      throw new NotFoundException(`El número de manifiesto ${manifestId} no fue encontrado`);
     }
 
     const manifest: ManifestDto = {
