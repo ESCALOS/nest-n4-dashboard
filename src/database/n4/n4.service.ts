@@ -13,6 +13,7 @@ import {
   ManifestResult,
   TransactionResult,
   StockpilingTicket,
+  WorkingVesselResult,
 } from './n4.interfaces';
 
 @Injectable()
@@ -69,6 +70,17 @@ export class N4Service implements OnModuleInit, OnModuleDestroy {
       return result.recordset[0] || null;
     } catch (error) {
       this.logger.error(`Error getting manifest ${manifestId}`, error);
+      throw error;
+    }
+  }
+
+  async getWorkingVessels(): Promise<WorkingVesselResult[]> {
+    try {
+      const request = this.pool.request();
+      const result = await request.query<WorkingVesselResult>(N4Queries.getWorkingVessels);
+      return result.recordset;
+    } catch (error) {
+      this.logger.error('Error getting working vessels', error);
       throw error;
     }
   }

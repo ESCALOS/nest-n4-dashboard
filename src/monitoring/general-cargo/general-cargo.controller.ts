@@ -101,6 +101,16 @@ export class GeneralCargoController {
   // ============================================
 
   /**
+   * Get vessels currently in WORKING phase.
+   * GET /monitoring/general-cargo/working-vessels
+   */
+  @Get('working-vessels')
+  async getWorkingVessels() {
+    const vessels = await this.generalCargoService.getWorkingVessels();
+    return { success: true, data: vessels };
+  }
+
+  /**
    * Register a manifest + operation_type for monitoring.
    * POST /monitoring/general-cargo/operations
    */

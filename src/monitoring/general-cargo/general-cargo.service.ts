@@ -26,6 +26,14 @@ export class GeneralCargoService {
   ) { }
 
   // ============================================
+  // WORKING VESSELS
+  // ============================================
+
+  async getWorkingVessels() {
+    return this.n4Service.getWorkingVessels();
+  }
+
+  // ============================================
   // DATA FETCHING (cache-aside pattern)
   // ============================================
 

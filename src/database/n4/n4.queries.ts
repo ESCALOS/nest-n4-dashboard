@@ -20,6 +20,18 @@ export const N4Queries = {
     WHERE acv.id = @manifestId
   `,
 
+    /**
+     * Get vessels currently in WORKING phase
+     * Returns: manifest_id, vessel_name
+     */
+    getWorkingVessels: `
+    SELECT acv.id AS manifest_id, vv.name AS vessel_name
+    FROM argo_carrier_visit acv
+    INNER JOIN vsl_vessel_visit_details vis ON vis.vvd_gkey = acv.cvcvd_gkey
+    INNER JOIN vsl_vessels vv ON vv.gkey = vis.vessel_gkey
+    WHERE acv.phase = '40WORKING'
+  `,
+
     // ============================================
     // BL ITEMS QUERIES
     // ============================================

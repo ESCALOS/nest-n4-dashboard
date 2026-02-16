@@ -4,6 +4,11 @@ export interface ManifestResult {
     vessel_name: string;
 }
 
+export interface WorkingVesselResult {
+    manifest_id: string;
+    vessel_name: string;
+}
+
 export interface VesselOperationItemResult {
     gkey: number;
     nbr: string;
