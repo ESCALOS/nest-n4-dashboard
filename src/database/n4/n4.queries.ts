@@ -95,7 +95,7 @@ export const N4Queries = {
         calc.hold,
         ISNULL(rtt.bl_item_gkey, 0) AS bl_item_gkey,
         calc.shift,
-        COUNT(*) AS totalTickets,
+        COUNT(*) AS total_tickets,
         SUM(ISNULL(CAST(iu.flex_string09 AS INT), 0)) AS total_goods,
         SUM(ISNULL(rtt.ctr_gross_weight, 0)) AS total_weight
     FROM road_truck_transactions rtt
