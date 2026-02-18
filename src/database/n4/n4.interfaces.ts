@@ -14,6 +14,7 @@ export interface VesselOperationItemResult {
     nbr: string;
     manifested_weight: number;
     manifested_goods: number;
+    commodity?: string;
 }
 
 export interface TransactionResult {
@@ -57,4 +58,9 @@ export interface AppointmentResult {
     GateIn: Date | null;
     Yard: Date | null;
     Tipo: string;
+}
+
+export interface HoldAlertUnitResult {
+    unit_id: string;
+    hold: string;
 }

@@ -44,9 +44,11 @@ export const N4Queries = {
       cbi.gkey AS gkey,
       cbi.nbr AS nbr,
       COALESCE(TRY_CONVERT(DECIMAL(18,2), cbi.CUSTDFF_MANIFESTWEIGHT), 0) AS manifested_weight,
-      COALESCE(TRY_CONVERT(INT, cbi.CUSTDFF_BULTOS), 0) AS manifested_goods
+      COALESCE(TRY_CONVERT(INT, cbi.CUSTDFF_BULTOS), 0) AS manifested_goods,
+      rc.id AS commodity
     FROM crg_bl_item cbi
     INNER JOIN crg_bills_of_lading cbol ON cbol.gkey = cbi.bl_gkey
+    INNER JOIN ref_commodity rc ON rc.gkey = cbi.commodity_gkey
     WHERE cbol.cv_gkey = @cvGkey AND (cbi.flex_string01 <> 'Y' OR cbi.flex_string01 IS NULL)
   `,
 
@@ -58,9 +60,11 @@ export const N4Queries = {
       cbi.gkey AS gkey,
       cbi.nbr AS nbr,
       COALESCE(TRY_CONVERT(DECIMAL(18,2), cbi.CUSTDFF_MANIFESTWEIGHT), 0) AS manifested_weight,
-      COALESCE(TRY_CONVERT(INT, cbi.CUSTDFF_BULTOS), 0) AS manifested_goods
+      COALESCE(TRY_CONVERT(INT, cbi.CUSTDFF_BULTOS), 0) AS manifested_goods,
+      rc.id AS commodity
     FROM crg_bl_item cbi
     INNER JOIN crg_bills_of_lading cbol ON cbol.gkey = cbi.bl_gkey
+    INNER JOIN ref_commodity rc ON rc.gkey = cbi.commodity_gkey
     WHERE cbol.cv_gkey = @cvGkey AND cbi.flex_string01 = 'Y'
   `,
 
@@ -177,6 +181,62 @@ export const N4Queries = {
         calc.shift
   `,
 
+
+    // ============================================
+    // HOLD ALERT QUERIES - UNITS WITH INVALID HOLDS
+    // ============================================
+
+    /**
+     * Get units with invalid holds from GATE transactions.
+     * Only called when transactions with missing or unrecognized holds are detected.
+     * Returns individual unit IDs for correction.
+     * @param blItemGkeys - comma-separated BL item gkeys
+     * @param validHolds - comma-separated valid hold names
+     */
+    getGateUnitsWithInvalidHolds: `
+    SELECT TOP 50
+        iu.id AS unit_id,
+        ISNULL(UPPER(iu.flex_string12), 'SIN BODEGA') AS hold
+    FROM road_truck_transactions rtt
+    LEFT JOIN inv_unit iu
+        ON iu.gkey = rtt.unit_gkey
+    WHERE rtt.bl_item_gkey IN (SELECT value FROM STRING_SPLIT(@blItemGkeys, ','))
+      AND rtt.status = 'COMPLETE'
+      AND rtt.gate_gkey <> 54
+      AND (
+          iu.flex_string12 IS NULL
+          OR LTRIM(RTRIM(iu.flex_string12)) = ''
+          OR UPPER(iu.flex_string12) NOT IN (SELECT UPPER(LTRIM(RTRIM(value))) FROM STRING_SPLIT(@validHolds, ','))
+      )
+    ORDER BY iu.id
+  `,
+
+    /**
+     * Get units with invalid holds from CONTROL_PESAJE transactions.
+     * Only called when transactions with missing or unrecognized holds are detected.
+     * Returns individual unit IDs for correction.
+     * @param blItemGkeys - comma-separated BL item gkeys
+     * @param validHolds - comma-separated valid hold names
+     */
+    getControlPesajeUnitsWithInvalidHolds: `
+    SELECT TOP 50
+        iu.id AS unit_id,
+        ISNULL(UPPER(iu.flex_string12), 'SIN BODEGA') AS hold
+    FROM CUSTOM_IND_WEIGHING_TRANS ciwt
+    LEFT JOIN inv_unit iu
+        ON iu.id = ciwt.CUSTOMWGTRAN_CTRNBR
+    LEFT JOIN inv_unit_fcy_visit fcy
+        ON fcy.unit_gkey = iu.gkey
+    WHERE iu.category = 'EXPRT'
+      AND fcy.transit_state = 'S60_LOADED'
+      AND ciwt.CUSTOMWGTRAN_BL_ITEM IN (SELECT value FROM STRING_SPLIT(@blItemGkeys, ','))
+      AND (
+          iu.flex_string12 IS NULL
+          OR LTRIM(RTRIM(iu.flex_string12)) = ''
+          OR UPPER(iu.flex_string12) NOT IN (SELECT UPPER(LTRIM(RTRIM(value))) FROM STRING_SPLIT(@validHolds, ','))
+      )
+    ORDER BY iu.id
+  `,
 
     // ============================================
     // STOCKPILING TICKETS QUERY

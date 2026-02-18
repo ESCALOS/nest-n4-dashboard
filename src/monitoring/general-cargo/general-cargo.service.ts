@@ -6,6 +6,7 @@ import { ManifestDto } from './dto/manifest.dto';
 import { OperationVesselItemDto } from './dto/OperationVesselItem.dto';
 import { IS_BL_ITEM_AS, OperationType, IS_GATE_TRANSACTION } from './enums/operation-type.enum';
 import { TransactionDto } from './dto/transaction.dto';
+import { HoldAlertDto } from './dto/hold-alert.dto';
 import { TransactionResult } from 'src/database/n4/n4.interfaces';
 import { Manifest } from './interfaces/manifest.interface';
 import { Summary } from './interfaces/summary.interface';
@@ -109,6 +110,7 @@ export class GeneralCargoService {
       nbr: r.nbr,
       manifested_weight: r.manifested_weight,
       manifested_goods: r.manifested_goods,
+      ...(r.commodity && { commodity: r.commodity }),
     }));
 
     await this.redisService.setJson(cacheKey, blItems);
@@ -158,6 +160,107 @@ export class GeneralCargoService {
     await this.redisService.setJson(cacheKey, transactions);
 
     return transactions;
+  }
+
+  async getHoldAlerts(
+    manifestId: string,
+    operationType: OperationType,
+  ): Promise<HoldAlertDto[]> {
+    const cacheKey = CACHE_KEYS.holdAlerts(manifestId, operationType);
+
+    const cached = await this.redisService.getJson<HoldAlertDto[]>(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    return this.fetchAndCacheHoldAlerts(manifestId, operationType);
+  }
+
+  async fetchAndCacheHoldAlerts(
+    manifestId: string,
+    operationType: OperationType,
+  ): Promise<HoldAlertDto[]> {
+    const [holds, transactions, blItems] = await Promise.all([
+      this.getHolds(manifestId),
+      this.getTransactions(manifestId, operationType),
+      this.getBLItems(manifestId, operationType),
+    ]);
+
+    const validHoldNames = holds.map((h) => h.nbr);
+    const validHoldSet = new Set(validHoldNames);
+
+    // Si no hay bodegas definidas, no hay alertas que generar
+    if (validHoldSet.size === 0) {
+      const cacheKey = CACHE_KEYS.holdAlerts(manifestId, operationType);
+      await this.redisService.setJson(cacheKey, []);
+      return [];
+    }
+
+    // Detectar holds problemáticos en las transacciones ya cacheadas
+    const transactionHolds = new Set(transactions.map((t) => t.hold));
+
+    const hasMissing = transactionHolds.has('SIN BODEGA');
+    const unrecognizedHolds = [...transactionHolds].filter(
+      (h) => h !== 'SIN BODEGA' && h.trim() !== '' && !validHoldSet.has(h),
+    );
+
+    // Si no hay problemas, no consultar la BD
+    if (!hasMissing && unrecognizedHolds.length === 0) {
+      const cacheKey = CACHE_KEYS.holdAlerts(manifestId, operationType);
+      await this.redisService.setJson(cacheKey, []);
+      return [];
+    }
+
+    // Solo consultar la BD cuando se detectan problemas
+    const blItemGkeys = blItems.map((item) => item.gkey);
+    const units = await this.n4Service.getUnitsWithInvalidHolds(
+      blItemGkeys,
+      validHoldNames,
+      IS_GATE_TRANSACTION[operationType],
+    );
+
+    const alerts: HoldAlertDto[] = [];
+
+    // Agrupar unidades por tipo de alerta
+    const missingUnits = units
+      .filter((u) => u.hold === 'SIN BODEGA')
+      .map((u) => u.unit_id);
+
+    if (missingUnits.length > 0) {
+      alerts.push({
+        type: 'missing',
+        hold: 'SIN BODEGA',
+        units: missingUnits,
+      });
+    }
+
+    // Agrupar unidades por bodega no reconocida
+    const unrecognizedMap = new Map<string, string[]>();
+    for (const u of units) {
+      if (u.hold !== 'SIN BODEGA') {
+        if (!unrecognizedMap.has(u.hold)) {
+          unrecognizedMap.set(u.hold, []);
+        }
+        unrecognizedMap.get(u.hold)!.push(u.unit_id);
+      }
+    }
+
+    for (const [hold, unitIds] of unrecognizedMap) {
+      alerts.push({
+        type: 'unrecognized',
+        hold,
+        units: unitIds,
+      });
+    }
+
+    const cacheKey = CACHE_KEYS.holdAlerts(manifestId, operationType);
+    await this.redisService.setJson(cacheKey, alerts);
+
+    this.logger.debug(
+      `Hold alerts cached for ${manifestId}/${operationType}: ${alerts.length} alert(s)`,
+    );
+
+    return alerts;
   }
 
   async getStockpilingTickets(blItemGkeys: number[]): Promise<StockpilingTicketDto[]> {
@@ -273,9 +376,13 @@ export class GeneralCargoService {
     const member = this.encodeOperation(manifestId, operationType);
     await this.redisService.srem(CACHE_KEYS.monitoredOperations, member);
 
-    // Clean transaction cache for this combination
+    // Clean transaction and hold alerts cache for this combination
     const txKey = CACHE_KEYS.transactions(manifestId, operationType);
-    await this.redisService.del(txKey);
+    const alertsKey = CACHE_KEYS.holdAlerts(manifestId, operationType);
+    await Promise.all([
+      this.redisService.del(txKey),
+      this.redisService.del(alertsKey),
+    ]);
 
     this.logger.log(
       `Removed monitored operation: ${manifestId} / ${operationType}`,
@@ -290,11 +397,12 @@ export class GeneralCargoService {
     manifestId: string,
     operationType: OperationType,
   ): Promise<MonitoringGeneralCargoResponse> {
-    const [manifest, holds, blItems, rawTransactions] = await Promise.all([
+    const [manifest, holds, blItems, rawTransactions, holdAlerts] = await Promise.all([
       this.getManifest(manifestId),
       this.getHolds(manifestId),
       this.getBLItems(manifestId, operationType),
       this.getTransactions(manifestId, operationType),
+      this.getHoldAlerts(manifestId, operationType),
     ]);
 
     // Build manifest response
@@ -340,6 +448,7 @@ export class GeneralCargoService {
       last_update: new Date().toISOString(),
       shifts_worked: shiftsWorked,
       transactions,
+      hold_alerts: holdAlerts,
     };
 
     return {
@@ -427,6 +536,7 @@ export class GeneralCargoService {
       return {
         id: blItem.gkey,
         nbr: blItem.nbr,
+        ...(blItem.commodity && { commodity: blItem.commodity }),
         weight: {
           manifested: blItem.manifested_weight,
           processed: totalWeight,

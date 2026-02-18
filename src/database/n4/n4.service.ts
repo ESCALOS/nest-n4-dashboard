@@ -14,6 +14,7 @@ import {
   TransactionResult,
   StockpilingTicket,
   WorkingVesselResult,
+  HoldAlertUnitResult,
 } from './n4.interfaces';
 
 @Injectable()
@@ -153,6 +154,34 @@ export class N4Service implements OnModuleInit, OnModuleDestroy {
       return result.recordset;
     } catch (error) {
       this.logger.error('Error getting STOCKPILING tickets', error);
+      throw error;
+    }
+  }
+
+  // ============================================
+  // HOLD ALERT METHODS
+  // ============================================
+
+  async getUnitsWithInvalidHolds(
+    blItemGkeys: number[],
+    validHolds: string[],
+    isGateTransaction: boolean,
+  ): Promise<HoldAlertUnitResult[]> {
+    if (blItemGkeys.length === 0 || validHolds.length === 0) return [];
+
+    try {
+      const request = this.pool.request();
+      request.input('blItemGkeys', sql.VarChar, blItemGkeys.join(','));
+      request.input('validHolds', sql.VarChar, validHolds.join(','));
+
+      const result = await request.query<HoldAlertUnitResult>(
+        isGateTransaction
+          ? N4Queries.getGateUnitsWithInvalidHolds
+          : N4Queries.getControlPesajeUnitsWithInvalidHolds,
+      );
+      return result.recordset;
+    } catch (error) {
+      this.logger.error('Error getting units with invalid holds', error);
       throw error;
     }
   }

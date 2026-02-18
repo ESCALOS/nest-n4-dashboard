@@ -11,6 +11,8 @@ export const CACHE_KEYS = {
     `monitoring:general-cargo:blitems:${cvGkey}:${isAs ? 'AS' : 'NAS'}`,
   transactions: (manifestId: string, operationType: string) =>
     `monitoring:general-cargo:transactions:${manifestId}:${operationType}`,
+  holdAlerts: (manifestId: string, operationType: string) =>
+    `monitoring:general-cargo:hold-alerts:${manifestId}:${operationType}`,
 
   // Active monitored operations (manifest:operationType pairs) for background job
   monitoredOperations: 'monitoring:general-cargo:monitored-operations',

@@ -47,6 +47,10 @@ export class TransactionRefreshJob {
             op.manifest.id,
             op.operation_type,
           );
+          await this.generalCargoService.fetchAndCacheHoldAlerts(
+            op.manifest.id,
+            op.operation_type,
+          );
         } catch (error) {
           this.logger.error(
             `Failed to refresh ${op.operation_type} transactions for manifest ${op.manifest.id}`,

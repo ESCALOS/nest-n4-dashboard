@@ -3,4 +3,5 @@ export class OperationVesselItemDto {
     nbr: string;
     manifested_weight: number;
     manifested_goods: number;
+    commodity?: string;
 }
