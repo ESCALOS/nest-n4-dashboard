@@ -43,13 +43,16 @@ export class TransactionRefreshJob {
 
       for (const op of monitoredOps) {
         try {
+          const manifest = await this.generalCargoService.getManifest(op.manifest.id);
           await this.generalCargoService.fetchAndCacheTransactions(
             op.manifest.id,
             op.operation_type,
+            manifest,
           );
           await this.generalCargoService.fetchAndCacheHoldAlerts(
             op.manifest.id,
             op.operation_type,
+            manifest,
           );
         } catch (error) {
           this.logger.error(

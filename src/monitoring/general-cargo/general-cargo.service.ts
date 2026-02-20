@@ -64,8 +64,8 @@ export class GeneralCargoService {
     return manifest;
   }
 
-  async getHolds(manifestId: string): Promise<OperationVesselItemDto[]> {
-    const manifest = await this.getManifest(manifestId);
+  async getHolds(manifestId: string, resolvedManifest?: ManifestDto): Promise<OperationVesselItemDto[]> {
+    const manifest = resolvedManifest ?? await this.getManifest(manifestId);
     const cacheKey = CACHE_KEYS.holds(manifest.vvdGkey);
 
     const cached =
@@ -90,8 +90,9 @@ export class GeneralCargoService {
   async getBLItems(
     manifestId: string,
     operationType: OperationType,
+    resolvedManifest?: ManifestDto,
   ): Promise<OperationVesselItemDto[]> {
-    const manifest = await this.getManifest(manifestId);
+    const manifest = resolvedManifest ?? await this.getManifest(manifestId);
     const isAs = IS_BL_ITEM_AS[operationType];
     const cacheKey = CACHE_KEYS.blItems(manifest.gkey, isAs);
 
@@ -134,8 +135,9 @@ export class GeneralCargoService {
   async fetchAndCacheTransactions(
     manifestId: string,
     operationType: OperationType,
+    resolvedManifest?: ManifestDto,
   ): Promise<TransactionDto[]> {
-    const blItems = await this.getBLItems(manifestId, operationType);
+    const blItems = await this.getBLItems(manifestId, operationType, resolvedManifest);
     const blItemGkeys = blItems.map((item) => item.gkey);
 
     if (blItemGkeys.length === 0) {
@@ -166,6 +168,11 @@ export class GeneralCargoService {
     manifestId: string,
     operationType: OperationType,
   ): Promise<HoldAlertDto[]> {
+    // Stockpiling operations don't use holds, so no alerts apply
+    if (operationType === OperationType.STOCKPILING) {
+      return [];
+    }
+
     const cacheKey = CACHE_KEYS.holdAlerts(manifestId, operationType);
 
     const cached = await this.redisService.getJson<HoldAlertDto[]>(cacheKey);
@@ -179,11 +186,19 @@ export class GeneralCargoService {
   async fetchAndCacheHoldAlerts(
     manifestId: string,
     operationType: OperationType,
+    resolvedManifest?: ManifestDto,
   ): Promise<HoldAlertDto[]> {
+    // Stockpiling operations don't use holds, so no alerts apply
+    if (operationType === OperationType.STOCKPILING) {
+      return [];
+    }
+
+    const manifest = resolvedManifest ?? await this.getManifest(manifestId);
+
     const [holds, transactions, blItems] = await Promise.all([
-      this.getHolds(manifestId),
+      this.getHolds(manifestId, manifest),
       this.getTransactions(manifestId, operationType),
-      this.getBLItems(manifestId, operationType),
+      this.getBLItems(manifestId, operationType, manifest),
     ]);
 
     const validHoldNames = holds.map((h) => h.nbr);
@@ -277,7 +292,7 @@ export class GeneralCargoService {
     const cacheKey = CACHE_KEYS.holds(manifest.vvdGkey);
     await this.redisService.del(cacheKey);
     this.logger.log(`Cache invalidated for holds vvdGkey ${manifest.vvdGkey}`);
-    return this.getHolds(manifestId);
+    return this.getHolds(manifestId, manifest);
   }
 
   /**
@@ -292,7 +307,7 @@ export class GeneralCargoService {
     const cacheKey = CACHE_KEYS.blItems(manifest.gkey, isAs);
     await this.redisService.del(cacheKey);
     this.logger.log(`Cache invalidated for BL items cvGkey ${manifest.gkey} isAs ${isAs}`);
-    return this.getBLItems(manifestId, operationType);
+    return this.getBLItems(manifestId, operationType, manifest);
   }
 
   // ============================================
@@ -397,10 +412,11 @@ export class GeneralCargoService {
     manifestId: string,
     operationType: OperationType,
   ): Promise<MonitoringGeneralCargoResponse> {
-    const [manifest, holds, blItems, rawTransactions, holdAlerts] = await Promise.all([
-      this.getManifest(manifestId),
-      this.getHolds(manifestId),
-      this.getBLItems(manifestId, operationType),
+    const manifest = await this.getManifest(manifestId);
+
+    const [holds, blItems, rawTransactions, holdAlerts] = await Promise.all([
+      this.getHolds(manifestId, manifest),
+      this.getBLItems(manifestId, operationType, manifest),
       this.getTransactions(manifestId, operationType),
       this.getHoldAlerts(manifestId, operationType),
     ]);
