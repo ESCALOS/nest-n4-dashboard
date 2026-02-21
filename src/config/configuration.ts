@@ -14,16 +14,6 @@ export default () => ({
     port: parseInt(process.env.REDIS_PORT || '6379', 10),
     password: process.env.REDIS_PASSWORD || undefined,
   },
-  jobs: {
-    shippingRefreshInterval: parseInt(
-      process.env.SHIPPING_REFRESH_INTERVAL || '30000',
-      10,
-    ),
-    appointmentsRefreshInterval: parseInt(
-      process.env.APPOINTMENTS_REFRESH_INTERVAL || '30000',
-      10,
-    ),
-  },
   jwt: {
     secret: process.env.JWT_SECRET,
     expiration: parseInt(process.env.JWT_EXPIRATION || '3600', 10),
