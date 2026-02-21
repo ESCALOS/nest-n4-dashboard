@@ -29,7 +29,7 @@ export class AuthService {
         });
 
         if (!user || !user.isActive) {
-            throw new UnauthorizedException('Invalid credentials');
+            throw new UnauthorizedException('Credenciales inválidas.');
         }
 
         const isPasswordValid = await argon2.verify(
@@ -38,7 +38,7 @@ export class AuthService {
         );
 
         if (!isPasswordValid) {
-            throw new UnauthorizedException('Invalid credentials');
+            throw new UnauthorizedException('Credenciales inválidas.');
         }
 
         const tokens = await this.generateTokens(user.id, user.email, user.role);
@@ -118,6 +118,27 @@ export class AuthService {
         });
 
         this.logger.log(`User ${userId} logged out`);
+    }
+
+    async changePassword(userId: string, currentPassword: string, newPassword: string) {
+        const user = await this.prisma.user.findUnique({ where: { id: userId } });
+
+        if (!user) {
+            throw new UnauthorizedException('User not found');
+        }
+
+        const isValid = await argon2.verify(user.passwordHash, currentPassword);
+        if (!isValid) {
+            throw new UnauthorizedException('La contraseña actual es incorrecta');
+        }
+
+        const newHash = await argon2.hash(newPassword);
+        await this.prisma.user.update({
+            where: { id: userId },
+            data: { passwordHash: newHash },
+        });
+
+        this.logger.log(`User ${user.email} changed their password`);
     }
 
     private async generateTokens(userId: string, email: string, role: string) {

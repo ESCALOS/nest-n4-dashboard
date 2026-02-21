@@ -1,13 +1,14 @@
 import {
     Controller,
     Post,
+    Patch,
     Body,
     HttpCode,
     HttpStatus,
     Req,
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
-import { LoginDto, RefreshTokenDto } from './dto';
+import { LoginDto, RefreshTokenDto, ChangePasswordDto } from './dto';
 import { Public } from './decorators/public.decorator';
 import { GetUser } from './decorators/active-user.decorator';
 import type { ActiveUser } from './interfaces/jwt-payload.interface';
@@ -42,5 +43,15 @@ export class AuthController {
     @HttpCode(HttpStatus.OK)
     async me(@GetUser() user: ActiveUser) {
         return user;
+    }
+
+    @Patch('me/password')
+    @HttpCode(HttpStatus.OK)
+    async changePassword(
+        @GetUser() user: ActiveUser,
+        @Body() dto: ChangePasswordDto,
+    ) {
+        await this.authService.changePassword(user.userId, dto.currentPassword, dto.newPassword);
+        return { message: 'Contraseña actualizada correctamente' };
     }
 }
