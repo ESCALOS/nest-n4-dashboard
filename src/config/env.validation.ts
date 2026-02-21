@@ -65,6 +65,24 @@ class EnvironmentVariables {
   @Min(60)
   @IsOptional()
   JWT_EXPIRATION: number = 3600;
+
+  @IsString()
+  @IsOptional()
+  JWT_REFRESH_SECRET?: string;
+
+  @IsNumber()
+  @Min(60)
+  @IsOptional()
+  JWT_REFRESH_EXPIRATION: number = 604800;
+
+  // Admin seed
+  @IsString()
+  @IsOptional()
+  ADMIN_EMAIL: string = 'admin@navis.com';
+
+  @IsString()
+  @IsOptional()
+  ADMIN_PASSWORD: string = 'admin123456';
 }
 
 export function validate(config: Record<string, unknown>) {

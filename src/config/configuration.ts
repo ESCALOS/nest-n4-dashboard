@@ -27,5 +27,11 @@ export default () => ({
   jwt: {
     secret: process.env.JWT_SECRET,
     expiration: parseInt(process.env.JWT_EXPIRATION || '3600', 10),
+    refreshSecret: process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET,
+    refreshExpiration: parseInt(process.env.JWT_REFRESH_EXPIRATION || '604800', 10),
+  },
+  admin: {
+    email: process.env.ADMIN_EMAIL || 'admin@navis.com',
+    password: process.env.ADMIN_PASSWORD || 'admin123456',
   },
 });
