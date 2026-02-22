@@ -3,6 +3,7 @@ import { Observable, switchMap, startWith, finalize } from 'rxjs';
 import { AppointmentsService } from './appointments.service';
 import { AppointmentsEventService } from './appointments-event.service';
 import { AppointmentsResponseDto } from './dto/appointment-in-progress.dto';
+import { UpcomingAppointmentsResponseDto } from './dto/upcoming-appointment.dto';
 
 interface MessageEvent {
   data: string | object;
@@ -19,6 +20,10 @@ export class AppointmentsController {
     private readonly appointmentsService: AppointmentsService,
     private readonly eventService: AppointmentsEventService,
   ) { }
+
+  // ============================================
+  // IN-PROGRESS ENDPOINTS
+  // ============================================
 
   /**
    * REST endpoint — get appointments in progress
@@ -57,6 +62,51 @@ export class AppointmentsController {
       ),
       finalize(() =>
         this.logger.log('SSE connection closed — appointments in progress'),
+      ),
+    );
+  }
+
+  // ============================================
+  // UPCOMING ENDPOINTS
+  // ============================================
+
+  /**
+   * REST endpoint — get upcoming appointments
+   */
+  @Get('upcoming')
+  async getUpcomingAppointments(): Promise<UpcomingAppointmentsResponseDto> {
+    return this.appointmentsService.getUpcomingAppointments();
+  }
+
+  /**
+   * SSE endpoint — the frontend subscribes here to receive
+   * UpcomingAppointmentsResponseDto every time data is refreshed.
+   *
+   * GET /appointments/upcoming/stream
+   */
+  @Sse('upcoming/stream')
+  upcomingStream(): Observable<MessageEvent> {
+    this.logger.log('SSE connection opened — upcoming appointments');
+
+    return this.eventService.upcomingRefresh$.pipe(
+      startWith(undefined),
+      switchMap(() =>
+        new Observable<MessageEvent>((subscriber) => {
+          this.appointmentsService
+            .getUpcomingAppointments()
+            .then((data) => {
+              subscriber.next({ data });
+              subscriber.complete();
+            })
+            .catch((err) => {
+              this.logger.error(`Error fetching upcoming appointments: ${err.message}`);
+              subscriber.next({ data: { data: [], count: 0, timestamp: new Date() } });
+              subscriber.complete();
+            });
+        }),
+      ),
+      finalize(() =>
+        this.logger.log('SSE connection closed — upcoming appointments'),
       ),
     );
   }

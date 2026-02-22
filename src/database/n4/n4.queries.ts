@@ -280,6 +280,62 @@ export const N4Queries = {
     // ============================================
 
     /**
+     * Get upcoming appointments (Citas Próximas)
+     * For container operations at gate 53
+     */
+    getUpcomingAppointments: `
+    SELECT
+        appt.id AS Cita,
+        DATEADD(HOUR, 5, appt_slot.start_date) as Fecha,
+        line.id AS Linea,
+        COALESCE(bk.nbr, 'N.E.') AS Booking,
+        appt.truck_id AS Placa,
+        appt.chassis_id AS Carreta,
+        shipper.name AS Cliente,
+        COALESCE(appt.ufv_flex_string09, 'N.E.') AS Tecnologia,
+        COALESCE(commodity.id, 'N.E.') AS Producto,
+        COALESCE(unit.id,'N.E.') AS Contenedor,
+        CASE 
+            WHEN acv.id IS NULL THEN 'N.E.'
+            ELSE CONCAT(acv.id, ' - ', ves.name)
+        END AS Nave,
+        CASE appt.trans_type
+            WHEN 'DOE' THEN 'Recepción Full'
+            WHEN 'PUM' THEN 'Despacho'
+            WHEN 'DOM' THEN 'Devolución'
+            WHEN 'PUE' THEN 'Retiro Full'
+            ELSE 'Otro	'
+        END AS 'Tipo'
+    FROM road_gate_appointment appt
+    LEFT JOIN road_appt_time_slot appt_slot
+        ON appt_slot.gkey = appt.time_slot_gkey
+    LEFT JOIN inv_unit unit
+        ON unit.gkey = appt.unit_gkey
+    LEFT JOIN argo_carrier_visit acv
+        ON acv.gkey = appt.vessel_visit_gkey
+    LEFT JOIN argo_visit_details del
+        ON acv.cvcvd_gkey = del.gkey
+    LEFT JOIN vsl_vessel_visit_details vis
+        ON del.gkey = vis.vvd_gkey
+    LEFT JOIN vsl_vessels ves
+        ON ves.gkey = vis.vessel_gkey
+    LEFT JOIN ref_bizunit_scoped line
+        ON line.gkey = appt.line_op_gkey
+    LEFT JOIN ref_bizunit_scoped shipper
+        ON shipper.gkey = appt.shipper_gkey
+    LEFT JOIN inv_eq_base_order bk
+        ON bk.gkey = appt.order_gkey
+    LEFT JOIN inv_eq_base_order_item bk_item_pivot
+        ON bk_item_pivot.eqo_gkey = bk.gkey
+    LEFT JOIN ord_equipment_order_items bk_item
+        ON bk_item.gkey = bk_item_pivot.gkey
+    LEFT JOIN ref_commodity commodity
+        ON commodity.gkey = bk_item.commodity_gkey
+    WHERE appt.state = 'CREATED'
+        AND appt.gate_gkey = 53`,
+
+
+    /**
      * Get appointments in progress (Citas en Proceso de Atención)
      * For container operations at gate 53
      */

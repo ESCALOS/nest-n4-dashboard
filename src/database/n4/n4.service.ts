@@ -9,6 +9,7 @@ import * as sql from 'mssql';
 import { N4Queries } from './n4.queries';
 import {
   AppointmentResult,
+  UpcomingAppointmentResult,
   VesselOperationItemResult,
   ManifestResult,
   TransactionResult,
@@ -199,6 +200,19 @@ export class N4Service implements OnModuleInit, OnModuleDestroy {
       return result.recordset;
     } catch (error) {
       this.logger.error('Error getting appointments in progress', error);
+      throw error;
+    }
+  }
+
+  async getUpcomingAppointments(): Promise<UpcomingAppointmentResult[]> {
+    try {
+      const request = this.pool.request();
+      const result = await request.query<UpcomingAppointmentResult>(
+        N4Queries.getUpcomingAppointments,
+      );
+      return result.recordset;
+    } catch (error) {
+      this.logger.error('Error getting upcoming appointments', error);
       throw error;
     }
   }

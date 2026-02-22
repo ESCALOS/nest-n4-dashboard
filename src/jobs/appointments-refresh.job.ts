@@ -29,10 +29,15 @@ export class AppointmentsRefreshJob {
     const startTime = Date.now();
 
     try {
-      await this.appointmentsService.fetchAndCacheAppointments();
+      // Refresh both in-progress and upcoming in parallel
+      await Promise.all([
+        this.appointmentsService.fetchAndCacheAppointments(),
+        this.appointmentsService.fetchAndCacheUpcomingAppointments(),
+      ]);
 
       // Notify SSE clients that data has been refreshed
       this.eventService.notifyRefresh();
+      this.eventService.notifyUpcomingRefresh();
 
       const duration = Date.now() - startTime;
       this.logger.debug(`Appointments refresh completed in ${duration}ms`);

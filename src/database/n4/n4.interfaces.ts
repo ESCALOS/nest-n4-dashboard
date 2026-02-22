@@ -60,6 +60,21 @@ export interface AppointmentResult {
     Tipo: string;
 }
 
+export interface UpcomingAppointmentResult {
+    Cita: string;
+    Fecha: Date;
+    Linea: string;
+    Booking: string;
+    Placa: string;
+    Carreta: string;
+    Cliente: string;
+    Tecnologia: string;
+    Producto: string;
+    Contenedor: string;
+    Nave: string;
+    Tipo: string;
+}
+
 export interface HoldAlertUnitResult {
     unit_id: string;
     hold: string;

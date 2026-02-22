@@ -3,10 +3,16 @@ import { N4Service } from '../database/n4/n4.service';
 import { RedisService } from '../database/redis/redis.service';
 import { CACHE_KEYS } from '../common/constants/cache-keys.constant';
 import { AppointmentResult } from '../database/n4/n4.interfaces';
+import type { UpcomingAppointmentResult } from '../database/n4/n4.interfaces';
 import {
   AppointmentInProgressDto,
   AppointmentsResponseDto,
 } from './dto/appointment-in-progress.dto';
+import {
+  UpcomingAppointmentDto,
+  UpcomingAppointmentsResponseDto,
+  type AppointmentEstado,
+} from './dto/upcoming-appointment.dto';
 
 @Injectable()
 export class AppointmentsService {
@@ -65,6 +71,95 @@ export class AppointmentsService {
     this.logger.debug(`Cached ${appointments.length} appointments in progress`);
 
     return response;
+  }
+
+  // ============================================
+  // UPCOMING APPOINTMENTS
+  // ============================================
+
+  /**
+   * Get upcoming appointments from cache
+   */
+  async getUpcomingAppointments(): Promise<UpcomingAppointmentsResponseDto> {
+    const cacheKey = CACHE_KEYS.upcomingAppointments;
+
+    const cached =
+      await this.redisService.getJson<UpcomingAppointmentsResponseDto>(cacheKey);
+
+    if (cached) {
+      return cached;
+    }
+
+    return this.fetchAndCacheUpcomingAppointments();
+  }
+
+  /**
+   * Fetch upcoming appointments from N4 and cache them.
+   * Estado is recalculated on every refresh so colors update in real-time.
+   */
+  async fetchAndCacheUpcomingAppointments(): Promise<UpcomingAppointmentsResponseDto> {
+    const results = await this.n4Service.getUpcomingAppointments();
+
+    const appointments: UpcomingAppointmentDto[] = results
+      .map((r) => this.mapUpcomingAppointment(r))
+      .sort((a, b) => {
+        // Ordenar por fecha ascendente (próximas primero)
+        const dateA = a.fechaCita ? new Date(a.fechaCita).getTime() : 0;
+        const dateB = b.fechaCita ? new Date(b.fechaCita).getTime() : 0;
+        return dateA - dateB;
+      });
+
+    const response: UpcomingAppointmentsResponseDto = {
+      data: appointments,
+      count: appointments.length,
+      timestamp: new Date(),
+    };
+
+    const cacheKey = CACHE_KEYS.upcomingAppointments;
+    await this.redisService.setJson(cacheKey, response);
+
+    this.logger.debug(`Cached ${appointments.length} upcoming appointments`);
+
+    return response;
+  }
+
+  /**
+   * Map raw upcoming appointment DB result to DTO with computed estado
+   */
+  private mapUpcomingAppointment(r: UpcomingAppointmentResult): UpcomingAppointmentDto {
+    return {
+      cita: r.Cita,
+      fechaCita: r.Fecha,
+      linea: r.Linea,
+      booking: r.Booking,
+      placa: r.Placa,
+      carreta: r.Carreta,
+      cliente: r.Cliente,
+      tecnologia: r.Tecnologia,
+      producto: r.Producto,
+      contenedor: r.Contenedor,
+      nave: r.Nave,
+      tipo: r.Tipo,
+      estado: this.calculateEstado(r.Fecha),
+    };
+  }
+
+  /**
+   * Calcula el estado de una cita próxima basándose en la ventana de ±2 horas:
+   * - vencida: now > fecha + 2h (ya pasó la ventana de atención)
+   * - activa: fecha - 2h <= now <= fecha + 2h (dentro del rango de atención)
+   * - pendiente: now < fecha - 2h (aún no llega su turno)
+   */
+  private calculateEstado(fecha: Date | null): AppointmentEstado {
+    if (!fecha) return 'pendiente';
+
+    const now = Date.now();
+    const fechaMs = new Date(fecha).getTime();
+    const twoHoursMs = 2 * 60 * 60 * 1000;
+
+    if (now > fechaMs + twoHoursMs) return 'vencida';
+    if (now >= fechaMs - twoHoursMs) return 'activa';
+    return 'pendiente';
   }
 
   /**

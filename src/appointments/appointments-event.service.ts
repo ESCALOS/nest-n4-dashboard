@@ -9,12 +9,21 @@ import { Subject } from 'rxjs';
 @Injectable()
 export class AppointmentsEventService {
     private readonly refreshSubject = new Subject<void>();
+    private readonly upcomingRefreshSubject = new Subject<void>();
 
-    /** Observable that the SSE endpoint subscribes to */
+    /** Observable that the SSE endpoint subscribes to (in-progress) */
     readonly refresh$ = this.refreshSubject.asObservable();
 
-    /** Called by the background job after refreshing data */
+    /** Observable that the SSE endpoint subscribes to (upcoming) */
+    readonly upcomingRefresh$ = this.upcomingRefreshSubject.asObservable();
+
+    /** Called by the background job after refreshing in-progress data */
     notifyRefresh(): void {
         this.refreshSubject.next();
+    }
+
+    /** Called by the background job after refreshing upcoming data */
+    notifyUpcomingRefresh(): void {
+        this.upcomingRefreshSubject.next();
     }
 }
