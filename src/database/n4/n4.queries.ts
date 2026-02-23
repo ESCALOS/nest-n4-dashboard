@@ -280,10 +280,10 @@ export const N4Queries = {
     // ============================================
 
     /**
-     * Get upcoming appointments (Citas Próximas)
+     * Get pending appointments (Citas Pendientes)
      * For container operations at gate 53
      */
-    getUpcomingAppointments: `
+    getPendingAppointments: `
     SELECT
         appt.id AS Cita,
         DATEADD(HOUR, 5, appt_slot.start_date) as Fecha,

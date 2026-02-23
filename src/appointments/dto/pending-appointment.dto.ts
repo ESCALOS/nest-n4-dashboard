@@ -1,6 +1,6 @@
 export type AppointmentEstado = 'vencida' | 'activa' | 'pendiente';
 
-export class UpcomingAppointmentDto {
+export class PendingAppointmentDto {
     cita: string;
     fechaCita: Date | null;
     linea: string;
@@ -16,8 +16,8 @@ export class UpcomingAppointmentDto {
     estado: AppointmentEstado;
 }
 
-export class UpcomingAppointmentsResponseDto {
-    data: UpcomingAppointmentDto[];
+export class PendingAppointmentsResponseDto {
+    data: PendingAppointmentDto[];
     count: number;
     timestamp: Date;
 }

@@ -19,7 +19,7 @@ export const CACHE_KEYS = {
 
   // Appointments module keys
   appointmentsInProgress: 'appointments:in-progress',
-  upcomingAppointments: 'appointments:upcoming',
+  pendingAppointments: 'appointments:pending',
 };
 
 /**

@@ -60,7 +60,7 @@ export interface AppointmentResult {
     Tipo: string;
 }
 
-export interface UpcomingAppointmentResult {
+export interface PendingAppointmentResult {
     Cita: string;
     Fecha: Date;
     Linea: string;

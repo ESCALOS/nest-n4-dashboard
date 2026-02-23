@@ -9,13 +9,13 @@ import * as sql from 'mssql';
 import { N4Queries } from './n4.queries';
 import {
   AppointmentResult,
-  UpcomingAppointmentResult,
   VesselOperationItemResult,
   ManifestResult,
   TransactionResult,
   StockpilingTicket,
   WorkingVesselResult,
   HoldAlertUnitResult,
+  PendingAppointmentResult,
 } from './n4.interfaces';
 
 @Injectable()
@@ -204,15 +204,15 @@ export class N4Service implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  async getUpcomingAppointments(): Promise<UpcomingAppointmentResult[]> {
+  async getPendingAppointments(): Promise<PendingAppointmentResult[]> {
     try {
       const request = this.pool.request();
-      const result = await request.query<UpcomingAppointmentResult>(
-        N4Queries.getUpcomingAppointments,
+      const result = await request.query<PendingAppointmentResult>(
+        N4Queries.getPendingAppointments,
       );
       return result.recordset;
     } catch (error) {
-      this.logger.error('Error getting upcoming appointments', error);
+      this.logger.error('Error getting pending appointments', error);
       throw error;
     }
   }

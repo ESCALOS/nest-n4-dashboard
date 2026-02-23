@@ -3,16 +3,16 @@ import { N4Service } from '../database/n4/n4.service';
 import { RedisService } from '../database/redis/redis.service';
 import { CACHE_KEYS } from '../common/constants/cache-keys.constant';
 import { AppointmentResult } from '../database/n4/n4.interfaces';
-import type { UpcomingAppointmentResult } from '../database/n4/n4.interfaces';
+import type { PendingAppointmentResult } from '../database/n4/n4.interfaces';
 import {
   AppointmentInProgressDto,
   AppointmentsResponseDto,
 } from './dto/appointment-in-progress.dto';
 import {
-  UpcomingAppointmentDto,
-  UpcomingAppointmentsResponseDto,
+  PendingAppointmentsResponseDto,
   type AppointmentEstado,
-} from './dto/upcoming-appointment.dto';
+  PendingAppointmentDto,
+} from './dto/pending-appointment.dto';
 
 @Injectable()
 export class AppointmentsService {
@@ -74,34 +74,34 @@ export class AppointmentsService {
   }
 
   // ============================================
-  // UPCOMING APPOINTMENTS
+  // PENDING APPOINTMENTS
   // ============================================
 
   /**
-   * Get upcoming appointments from cache
+   * Get pending appointments from cache
    */
-  async getUpcomingAppointments(): Promise<UpcomingAppointmentsResponseDto> {
-    const cacheKey = CACHE_KEYS.upcomingAppointments;
+  async getPendingAppointments(): Promise<PendingAppointmentsResponseDto> {
+    const cacheKey = CACHE_KEYS.pendingAppointments;
 
     const cached =
-      await this.redisService.getJson<UpcomingAppointmentsResponseDto>(cacheKey);
+      await this.redisService.getJson<PendingAppointmentsResponseDto>(cacheKey);
 
     if (cached) {
       return cached;
     }
 
-    return this.fetchAndCacheUpcomingAppointments();
+    return this.fetchAndCachePendingAppointments();
   }
 
   /**
-   * Fetch upcoming appointments from N4 and cache them.
+   * Fetch pending appointments from N4 and cache them.
    * Estado is recalculated on every refresh so colors update in real-time.
    */
-  async fetchAndCacheUpcomingAppointments(): Promise<UpcomingAppointmentsResponseDto> {
-    const results = await this.n4Service.getUpcomingAppointments();
+  async fetchAndCachePendingAppointments(): Promise<PendingAppointmentsResponseDto> {
+    const results = await this.n4Service.getPendingAppointments();
 
-    const appointments: UpcomingAppointmentDto[] = results
-      .map((r) => this.mapUpcomingAppointment(r))
+    const appointments: PendingAppointmentDto[] = results
+      .map((r) => this.mapPendingAppointment(r))
       .sort((a, b) => {
         // Ordenar por fecha ascendente (próximas primero)
         const dateA = a.fechaCita ? new Date(a.fechaCita).getTime() : 0;
@@ -109,24 +109,24 @@ export class AppointmentsService {
         return dateA - dateB;
       });
 
-    const response: UpcomingAppointmentsResponseDto = {
+    const response: PendingAppointmentsResponseDto = {
       data: appointments,
       count: appointments.length,
       timestamp: new Date(),
     };
 
-    const cacheKey = CACHE_KEYS.upcomingAppointments;
+    const cacheKey = CACHE_KEYS.pendingAppointments;
     await this.redisService.setJson(cacheKey, response);
 
-    this.logger.debug(`Cached ${appointments.length} upcoming appointments`);
+    this.logger.debug(`Cached ${appointments.length} pending appointments`);
 
     return response;
   }
 
   /**
-   * Map raw upcoming appointment DB result to DTO with computed estado
+   * Map raw pending appointment DB result to DTO with computed estado
    */
-  private mapUpcomingAppointment(r: UpcomingAppointmentResult): UpcomingAppointmentDto {
+  private mapPendingAppointment(r: PendingAppointmentResult): PendingAppointmentDto {
     return {
       cita: r.Cita,
       fechaCita: r.Fecha,
