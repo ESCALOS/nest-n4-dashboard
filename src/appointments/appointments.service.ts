@@ -165,13 +165,19 @@ export class AppointmentsService {
   /**
    * Map raw DB result to DTO with computed fields:
    * - fechaStage: fecha del stage actual
-   * - tiempo: diferencia en minutos entre ahora y la fecha del stage actual
+   * - tiempo: diferencia en minutos entre ahora y la fecha del pre-gate (si está en pre_gate o stages posteriores), o entre ahora y la fecha del stage actual (si está en tranquera)
    */
   private mapAppointment(r: AppointmentResult): AppointmentInProgressDto {
     const stageDate = this.getStageDateForCurrentStage(r);
     const now = new Date();
+
+
     const tiempoMin = stageDate
-      ? Math.floor((now.getTime() - new Date(stageDate).getTime()) / 60000)
+      ? r.Stage === 'tranquera'
+        ? Math.floor((now.getTime() - new Date(stageDate).getTime()) / 60000)
+        : r.PreGate
+          ? Math.floor((now.getTime() - new Date(r.PreGate).getTime()) / 60000)
+          : null
       : null;
 
     return {
