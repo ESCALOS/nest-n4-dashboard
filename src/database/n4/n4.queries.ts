@@ -68,6 +68,34 @@ export const N4Queries = {
     WHERE cbol.cv_gkey = @cvGkey AND cbi.flex_string01 = 'Y'
   `,
 
+    /**
+     * Check if manifest has MAÍZ commodity (commodity_gkey = 95)
+     */
+    hasMaizCommodity: `
+        SELECT TOP 1 1 AS has_maiz
+        FROM crg_bl_item cbi
+        INNER JOIN crg_bills_of_lading cbol ON cbol.gkey = cbi.bl_gkey
+        WHERE cbi.commodity_gkey = 95
+            AND cbol.cv_gkey = @cvGkey
+    `,
+
+    /**
+     * Get BL Items by BL number prefix (special-case behavior)
+     */
+    getBLItemsByPrefix: `
+        SELECT
+            cbi.gkey AS gkey,
+            cbi.nbr AS nbr,
+            COALESCE(TRY_CONVERT(DECIMAL(18,2), cbi.CUSTDFF_MANIFESTWEIGHT), 0) AS manifested_weight,
+            COALESCE(TRY_CONVERT(INT, cbi.CUSTDFF_BULTOS), 0) AS manifested_goods,
+            rc.id AS commodity
+        FROM crg_bl_item cbi
+        INNER JOIN crg_bills_of_lading cbol ON cbol.gkey = cbi.bl_gkey
+        INNER JOIN ref_commodity rc ON rc.gkey = cbi.commodity_gkey
+        WHERE cbol.cv_gkey = @cvGkey
+            AND cbi.nbr LIKE @blPrefix
+    `,
+
     // ============================================
     // HOLDS QUERY
     // ============================================

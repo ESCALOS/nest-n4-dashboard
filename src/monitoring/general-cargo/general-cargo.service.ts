@@ -105,7 +105,22 @@ export class GeneralCargoService {
       return cached;
     }
 
-    const results = await this.n4Service.getBLItems(manifest.gkey, isAs);
+    const hasMaizCommodity = await this.n4Service.hasMaizCommodity(manifest.gkey);
+
+    const results = hasMaizCommodity
+      ? operationType === OperationType.DISPATCHING
+        ? await this.n4Service.getBLItemsByPrefix(manifest.gkey, 'SSP')
+        : operationType === OperationType.STOCKPILING
+          ? await this.n4Service.getBLItemsByPrefix(manifest.gkey, 'OS')
+          : await this.n4Service.getBLItems(manifest.gkey, isAs)
+      : await this.n4Service.getBLItems(manifest.gkey, isAs);
+
+    if (hasMaizCommodity && (operationType === OperationType.DISPATCHING || operationType === OperationType.STOCKPILING)) {
+      this.logger.log(
+        `Aplicando regla especial MAÍZ para manifest ${manifestId}: ${operationType === OperationType.DISPATCHING ? 'SSP' : 'OS'}`,
+      );
+    }
+
     const blItems: OperationVesselItemDto[] = results.map((r) => ({
       gkey: r.gkey,
       nbr: r.nbr,

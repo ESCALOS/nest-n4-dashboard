@@ -103,6 +103,46 @@ export class N4Service implements OnModuleInit, OnModuleDestroy {
       throw error;
     }
   }
+
+  async hasMaizCommodity(cvGkey: number): Promise<boolean> {
+    try {
+      const request = this.pool.request();
+      request.input('cvGkey', sql.BigInt, cvGkey);
+
+      const result = await request.query<{ has_maiz: number }>(
+        N4Queries.hasMaizCommodity,
+      );
+      return result.recordset.length > 0;
+    } catch (error) {
+      this.logger.error(
+        `Error checking MAÍZ commodity for cvGkey ${cvGkey}`,
+        error,
+      );
+      throw error;
+    }
+  }
+
+  async getBLItemsByPrefix(
+    cvGkey: number,
+    prefix: 'SSP' | 'OS',
+  ): Promise<VesselOperationItemResult[]> {
+    try {
+      const request = this.pool.request();
+      request.input('cvGkey', sql.BigInt, cvGkey);
+      request.input('blPrefix', sql.VarChar, `${prefix}%`);
+
+      const result = await request.query<VesselOperationItemResult>(
+        N4Queries.getBLItemsByPrefix,
+      );
+      return result.recordset;
+    } catch (error) {
+      this.logger.error(
+        `Error getting BL items by prefix ${prefix} for cvGkey ${cvGkey}`,
+        error,
+      );
+      throw error;
+    }
+  }
   // ============================================
   // HOLDS METHODS
   // ============================================
