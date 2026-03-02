@@ -69,13 +69,13 @@ export const N4Queries = {
   `,
 
     /**
-     * Check if manifest has MAÍZ commodity (commodity_gkey = 95)
+     * Check if manifest has MAÍZ commodity (commodity_gkey = 95 or 182)
      */
     hasMaizCommodity: `
         SELECT TOP 1 1 AS has_maiz
         FROM crg_bl_item cbi
         INNER JOIN crg_bills_of_lading cbol ON cbol.gkey = cbi.bl_gkey
-        WHERE cbi.commodity_gkey = 95
+        WHERE cbi.commodity_gkey IN (95,182)
             AND cbol.cv_gkey = @cvGkey
     `,
 
@@ -286,7 +286,8 @@ export const N4Queries = {
         ISNULL(truc.truck_id, '') AS tracto,
         ISNULL(rtt.chs_id, '') AS carreta,
         ISNULL(truc.driver_name, '') AS conductor,
-        ISNULL(CONVERT(VARCHAR, stg.fechaSalida, 120), '') AS fechaSalida
+        ISNULL(CONVERT(VARCHAR, stg.fechaSalida, 120), '') AS fechaSalida,
+        ISNULL(rtt.notes, '') AS notas
     FROM road_truck_transactions rtt
     INNER JOIN crg_bl_item cbi ON cbi.gkey = rtt.bl_item_gkey
     LEFT JOIN road_truck_visit_details truc ON truc.tvdtls_gkey = rtt.truck_visit_gkey
