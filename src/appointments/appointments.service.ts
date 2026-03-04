@@ -184,6 +184,8 @@ export class AppointmentsService {
       cita: r.Cita,
       fechaCita: r.Fecha,
       fechaStage: stageDate,
+      fechaPreGate: r.PreGate,
+      fechaGateIn: r.GateIn,
       stage: r.Stage,
       tiempo: tiempoMin,
       linea: r.Linea,
@@ -196,6 +198,7 @@ export class AppointmentsService {
       nave: r.Nave,
       carreta: r.Carreta,
       tipo: r.Tipo,
+      tiempo_eir: r.TiempoEir ?? null,
     };
   }
 
