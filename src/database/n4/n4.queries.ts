@@ -288,6 +288,7 @@ export const N4Queries = {
         ISNULL(truc.driver_name, '') AS conductor,
         ISNULL(CONVERT(VARCHAR, stg.fechaSalida, 120), '') AS fechaSalida,
         ISNULL(rtt.notes, '') AS notas
+        ISNULL(rtt.trkco_id, '') AS rucTransportista
     FROM road_truck_transactions rtt
     INNER JOIN crg_bl_item cbi ON cbi.gkey = rtt.bl_item_gkey
     LEFT JOIN road_truck_visit_details truc ON truc.tvdtls_gkey = rtt.truck_visit_gkey
