@@ -287,7 +287,7 @@ export const N4Queries = {
         ISNULL(rtt.chs_id, '') AS carreta,
         ISNULL(truc.driver_name, '') AS conductor,
         ISNULL(CONVERT(VARCHAR, stg.fechaSalida, 120), '') AS fechaSalida,
-        ISNULL(rtt.notes, '') AS notas
+        ISNULL(rtt.notes, '') AS notas,
         ISNULL(rtt.trkco_id, '') AS rucTransportista
     FROM road_truck_transactions rtt
     INNER JOIN crg_bl_item cbi ON cbi.gkey = rtt.bl_item_gkey
@@ -384,6 +384,92 @@ export const N4Queries = {
             MAX(CASE WHEN id = 'yard' THEN stage_end END) AS Yard
         FROM road_truck_transaction_stages
         GROUP BY tran_gkey
+    )
+    SELECT
+        appt.id AS Cita,
+        DATEADD(HOUR, 5, slot.start_date) AS Fecha,
+        gat.eqo_nbr AS Booking,
+        gat.line_id AS Linea,
+        shi.name AS Cliente,
+        unit.id AS Contenedor,
+        gat.flex_string24 AS Tecnologia,
+        com.id AS Producto,
+        CONCAT(car.id, ' - ', ves.name) AS Nave,
+        truc.truck_id AS Placa,
+        gat.chs_id AS Carreta,
+        CASE 
+            WHEN gat.stage_id IN ('pre-gate', 'pre_gate') THEN 'pre_gate'
+            ELSE gat.stage_id
+        END AS Stage,
+        DATEADD(HOUR, 5, stg.Tranquera) AS Tranquera,
+        DATEADD(HOUR, 5, stg.PreGate) AS PreGate,
+        DATEADD(HOUR, 5, stg.GateIn) AS GateIn,
+        DATEADD(HOUR, 5, stg.Yard) AS Yard,
+        CASE gat.sub_type
+            WHEN 'RE' THEN 'Recepción Full'
+            WHEN 'DM' THEN 'Despacho'
+            WHEN 'RM' THEN 'Devolución'
+            WHEN 'DI' THEN 'Ingreso Import'
+            WHEN 'DE' THEN 'Ingreso Export'
+            ELSE gat.sub_type
+        END AS Tipo,
+        eir.TiempoEir,
+        pod.id AS PuertoDescarga
+    FROM road_truck_transactions gat
+    LEFT JOIN inv_unit unit ON unit.gkey = gat.unit_gkey
+    LEFT JOIN road_gate_appointment appt ON appt.id = gat.appointment_nbr
+    LEFT JOIN inv_eq_base_order ordb ON ordb.gkey = appt.order_gkey
+    LEFT JOIN inv_eq_base_order_item ord ON ord.eqo_gkey = ordb.gkey
+    LEFT JOIN ord_equipment_order_items oreq ON oreq.gkey = ord.gkey
+    LEFT JOIN ref_commodity com ON com.gkey = oreq.commodity_gkey
+    LEFT JOIN ref_bizunit_scoped shi ON shi.gkey = appt.shipper_gkey
+    LEFT JOIN road_truck_visit_details truc ON truc.tvdtls_gkey = gat.truck_visit_gkey
+    LEFT JOIN argo_carrier_visit car ON car.gkey = ordb.vessel_visit_gkey
+    LEFT JOIN argo_visit_details del ON car.cvcvd_gkey = del.gkey
+    LEFT JOIN vsl_vessel_visit_details vis ON del.gkey = vis.vvd_gkey
+    LEFT JOIN vsl_vessels ves ON ves.gkey = vis.vessel_gkey
+    LEFT JOIN road_appt_time_slot slot ON slot.gkey = appt.time_slot_gkey
+    LEFT JOIN ref_routing_point pod ON pod.gkey = ordb.pod1_gkey
+    LEFT JOIN Stages stg ON stg.tran_gkey = gat.gkey
+    OUTER APPLY (
+        SELECT TOP 1
+            DATEDIFF(MINUTE, CUSTOMINSEIR_STARTINSP, CUSTOMINSEIR_ENDINSP) AS TiempoEir
+        FROM CUSTOM_INSPEIR
+        WHERE CUSTOMINSEIR_UFV = unit.active_ufv
+          AND (
+              (gat.sub_type = 'RE' AND CUSTOMINSEIR_GATE = 'IN' AND CUSTOMINSEIR_FREIGHT = 'FCL')
+              OR (gat.sub_type = 'DM' AND CUSTOMINSEIR_GATE = 'OUT' AND CUSTOMINSEIR_FREIGHT = 'MTY')
+              OR (gat.sub_type = 'RM' AND CUSTOMINSEIR_GATE = 'IN' AND CUSTOMINSEIR_FREIGHT = 'MTY')
+              OR (gat.sub_type NOT IN ('RE', 'DM', 'RM'))
+          )
+        ORDER BY gkey DESC
+    ) eir
+    WHERE gat.status = 'OK' AND gat.gate_gkey = 53
+  `,
+
+    /**
+     * Get completed appointments for export (Citas Completadas)
+     * For container operations at gate 53
+     * 
+     * Returns only appointments completed within the last 3 months.
+     * Uses gate_out stage timestamp instead of current time for calculations.
+     * Maximum 3 month range to prevent downloading excessive data.
+     * 
+     * - TiempoEir: inspection duration in minutes (from CUSTOM_INSPEIR table)
+     *   Used to calculate effective handling time by subtracting inspection duration
+     *   Returns NULL if no inspection records exist for the unit
+     */
+    getCompletedAppointmentsForExport: `
+    WITH Stages AS (
+        SELECT
+            tran_gkey,
+            MAX(CASE WHEN id = 'tranquera' THEN stage_end END) AS Tranquera,
+            MAX(CASE WHEN id IN ('pre_gate','pre-gate') THEN stage_end END) AS PreGate,
+            MAX(CASE WHEN id IN ('gate_in','ingate') THEN stage_end END) AS GateIn,
+            MAX(CASE WHEN id = 'yard' THEN stage_end END) AS Yard,
+            MAX(CASE WHEN id = 'gate_out' THEN stage_end END) AS GateOut
+        FROM road_truck_transaction_stages
+        GROUP BY tran_gkey
     ),
     EIR AS (
         SELECT
@@ -415,6 +501,7 @@ export const N4Queries = {
         DATEADD(HOUR, 5, stg.PreGate) AS PreGate,
         DATEADD(HOUR, 5, stg.GateIn) AS GateIn,
         DATEADD(HOUR, 5, stg.Yard) AS Yard,
+        DATEADD(HOUR, 5, stg.GateOut) AS GateOut,
         CASE gat.sub_type
             WHEN 'RE' THEN 'Recepción Full'
             WHEN 'DM' THEN 'Despacho'
@@ -442,7 +529,10 @@ export const N4Queries = {
     LEFT JOIN EIR eir 
         ON eir.CUSTOMINSEIR_UFV = unit.active_ufv
         AND eir.rn = 1
-    WHERE gat.status = 'OK' AND gat.gate_gkey = 53
+    WHERE gat.status = 'COMPLETE' 
+      AND gat.gate_gkey = 53
+      AND stg.GateOut >= DATEADD(MONTH, -3, CAST(GETDATE() AS DATE))
+    ORDER BY stg.GateOut DESC
   `,
 
 };

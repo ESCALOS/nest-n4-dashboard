@@ -61,6 +61,7 @@ export interface AppointmentResult {
     Yard: Date | null;
     Tipo: string;
     TiempoEir: number;
+    PuertoDescarga: string;
 }
 
 export interface PendingAppointmentResult {

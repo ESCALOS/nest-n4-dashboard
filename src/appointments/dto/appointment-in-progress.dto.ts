@@ -15,10 +15,10 @@
  * 
  * 3. Tiempo Efectivo (Effective Time):
  *    Net handling time excluding inspection duration
- *    Formula: (Now - GateIn) - tiempo_eir
- *    Only calculated when tiempo_eir is not NULL
+ *    Formula: (Now - GateIn) - tiempoEir
+ *    Only calculated when tiempoEir is not NULL
  * 
- * The tiempo_eir field stores inspection duration in minutes and is used
+ * The tiempoEir field stores inspection duration in minutes and is used
  * to calculate the actual operational time without inspection delays.
  */
 export class AppointmentInProgressDto {
@@ -46,7 +46,8 @@ export class AppointmentInProgressDto {
    * This value represents the time spent in inspection and is subtracted
    * from the total gate-in time to calculate the effective handling time.
    */
-  tiempo_eir?: number | null;
+  tiempoEir?: number | null;
+  puertoDescarga: string | null;
 }
 
 export class AppointmentsResponseDto {
