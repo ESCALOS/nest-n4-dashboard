@@ -429,7 +429,7 @@ export const N4Queries = {
     LEFT JOIN vsl_vessel_visit_details vis ON del.gkey = vis.vvd_gkey
     LEFT JOIN vsl_vessels ves ON ves.gkey = vis.vessel_gkey
     LEFT JOIN road_appt_time_slot slot ON slot.gkey = appt.time_slot_gkey
-    LEFT JOIN ref_routing_point pod ON pod.gkey = ordb.pod1_gkey
+    LEFT JOIN ref_routing_point pod ON pod.gkey = unit.pod1_gkey
     LEFT JOIN Stages stg ON stg.tran_gkey = gat.gkey
     OUTER APPLY (
         SELECT TOP 1
