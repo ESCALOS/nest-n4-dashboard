@@ -20,6 +20,10 @@ export const CACHE_KEYS = {
   // Appointments module keys
   appointmentsInProgress: 'appointments:in-progress',
   pendingAppointments: 'appointments:pending',
+  appointmentVesselByCarrierVisit: (carrierVisitGkey: number) =>
+    `appointments:vessel-by-carrier-visit:${carrierVisitGkey}`,
+  appointmentOrderInfo: (orderGkey: number) =>
+    `appointments:order-info:${orderGkey}`,
 };
 
 /**
@@ -34,4 +38,8 @@ export const CACHE_TTL = {
   // Appointments are refreshed by background job every 5s
   // No TTL needed as job handles refresh
   appointments: undefined,
+
+  // Booking/commodity metadata for pending appointments
+  // Appointments are usually created up to 3 days in advance
+  appointmentOrderInfo: 3 * 24 * 60 * 60,
 };

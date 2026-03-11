@@ -21,6 +21,52 @@ export const N4Queries = {
   `,
 
     /**
+     * Get vessel mapping by carrier visit gkeys (batch)
+     * Returns: carrier_visit_gkey, manifest_id, vessel_name
+     */
+    getVesselsByCarrierVisitGkeys: `
+        SELECT
+                acv.gkey AS carrier_visit_gkey,
+                acv.id AS manifest_id,
+                vv.name AS vessel_name
+        FROM argo_carrier_visit acv
+        INNER JOIN argo_visit_details del ON del.gkey = acv.cvcvd_gkey
+        INNER JOIN vsl_vessel_visit_details vis ON vis.vvd_gkey = del.gkey
+        INNER JOIN vsl_vessels vv ON vv.gkey = vis.vessel_gkey
+        WHERE acv.gkey IN (
+                SELECT TRY_CONVERT(BIGINT, value)
+                FROM STRING_SPLIT(@carrierVisitGkeys, ',')
+                WHERE TRY_CONVERT(BIGINT, value) IS NOT NULL
+        )
+    `,
+
+    /**
+     * Get order mapping by order gkeys (batch)
+     * Returns: order_gkey, booking, commodity
+     */
+    getOrderInfoByOrderGkeys: `
+        SELECT
+            bk.gkey AS order_gkey,
+            bk.nbr AS booking,
+            rc.id AS commodity
+        FROM inv_eq_base_order bk
+        OUTER APPLY (
+            SELECT MIN(oreq.commodity_gkey) AS commodity_gkey
+            FROM inv_eq_base_order_item ord
+            JOIN ord_equipment_order_items oreq
+                ON oreq.gkey = ord.gkey
+            WHERE ord.eqo_gkey = bk.gkey
+        ) ord_item
+        LEFT JOIN ref_commodity rc
+            ON rc.gkey = ord_item.commodity_gkey
+        WHERE bk.gkey IN (
+            SELECT TRY_CONVERT(BIGINT, value)
+            FROM STRING_SPLIT(@orderGkeys, ',')
+            WHERE TRY_CONVERT(BIGINT, value) IS NOT NULL
+        )
+    `,
+
+    /**
      * Get vessels currently in WORKING phase
      * Returns: manifest_id, vessel_name
      */
@@ -128,7 +174,7 @@ export const N4Queries = {
         ISNULL(rtt.bl_item_gkey, 0) AS bl_item_gkey,
         calc.shift,
         COUNT(*) AS total_tickets,
-        SUM(ISNULL(CAST(iu.flex_string09 AS INT), 0)) AS total_goods,
+        SUM(ISNULL(TRY_CAST(iu.flex_string09 AS INT), 0)) AS total_goods,
         SUM(ISNULL(rtt.ctr_gross_weight, 0)) AS total_weight
     FROM road_truck_transactions rtt
     LEFT JOIN inv_unit iu 
@@ -174,7 +220,7 @@ export const N4Queries = {
         ISNULL(ciwt.CUSTOMWGTRAN_BL_ITEM, 0) AS bl_item_gkey,
         calc.shift,
         COUNT(*) AS total_tickets,
-        SUM(ISNULL(CAST(iu.flex_string09 AS INT), 0)) AS total_goods,
+        SUM(ISNULL(TRY_CAST(iu.flex_string09 AS INT), 0)) AS total_goods,
         SUM(ISNULL(ciwt.CUSTOMWGTRAN_NETWEIGHT, 0)) AS total_weight
     FROM CUSTOM_IND_WEIGHING_TRANS ciwt
     LEFT JOIN inv_unit iu 
@@ -197,7 +243,7 @@ export const N4Queries = {
             END AS shift
     ) calc
     WHERE iu.category = 'EXPRT'
-      AND fcy.transit_state = 'S60_LOADED'
+      AND fcy.transit_state IN ('S70_DEPARTED','S60_LOADED')
       AND ciwt.CUSTOMWGTRAN_BL_ITEM IN (SELECT value FROM STRING_SPLIT(@blItemGkeys, ','))
     GROUP BY
         calc.hold,
@@ -314,55 +360,58 @@ export const N4Queries = {
      * For container operations at gate 53
      */
     getPendingAppointments: `
+    WITH Appt AS (
+        SELECT
+            id,
+            time_slot_gkey,
+            unit_gkey,
+            vessel_visit_gkey,
+            line_op_gkey,
+            shipper_gkey,
+            order_gkey,
+            truck_id,
+            chassis_id,
+            trans_type,
+            ufv_flex_string09
+        FROM road_gate_appointment
+        WHERE state = 'CREATED'
+        AND gate_gkey = 53
+    )
+
     SELECT
         appt.id AS Cita,
-        DATEADD(HOUR, 5, appt_slot.start_date) as Fecha,
+        DATEADD(HOUR,5,slot.start_date) AS Fecha,
         line.id AS Linea,
-        COALESCE(bk.nbr, 'N.E.') AS Booking,
+        appt.order_gkey AS OrderGkey,
         appt.truck_id AS Placa,
         appt.chassis_id AS Carreta,
         shipper.name AS Cliente,
-        COALESCE(appt.ufv_flex_string09, 'N.E.') AS Tecnologia,
-        COALESCE(commodity.id, 'N.E.') AS Producto,
+        COALESCE(appt.ufv_flex_string09,'N.E.') AS Tecnologia,
         COALESCE(unit.id,'N.E.') AS Contenedor,
-        CASE 
-            WHEN acv.id IS NULL THEN 'N.E.'
-            ELSE CONCAT(acv.id, ' - ', ves.name)
-        END AS Nave,
+        appt.vessel_visit_gkey AS VesselVisitGkey,
+
         CASE appt.trans_type
             WHEN 'DOE' THEN 'Recepción Full'
             WHEN 'PUM' THEN 'Despacho'
             WHEN 'DOM' THEN 'Devolución'
             WHEN 'PUE' THEN 'Retiro Full'
-            ELSE 'Otro	'
-        END AS 'Tipo'
-    FROM road_gate_appointment appt
-    LEFT JOIN road_appt_time_slot appt_slot
-        ON appt_slot.gkey = appt.time_slot_gkey
+            ELSE 'Otro'
+        END AS Tipo
+
+    FROM Appt appt
+
+    LEFT JOIN road_appt_time_slot slot
+        ON slot.gkey = appt.time_slot_gkey
+
     LEFT JOIN inv_unit unit
         ON unit.gkey = appt.unit_gkey
-    LEFT JOIN argo_carrier_visit acv
-        ON acv.gkey = appt.vessel_visit_gkey
-    LEFT JOIN argo_visit_details del
-        ON acv.cvcvd_gkey = del.gkey
-    LEFT JOIN vsl_vessel_visit_details vis
-        ON del.gkey = vis.vvd_gkey
-    LEFT JOIN vsl_vessels ves
-        ON ves.gkey = vis.vessel_gkey
+
     LEFT JOIN ref_bizunit_scoped line
         ON line.gkey = appt.line_op_gkey
+
     LEFT JOIN ref_bizunit_scoped shipper
         ON shipper.gkey = appt.shipper_gkey
-    LEFT JOIN inv_eq_base_order bk
-        ON bk.gkey = appt.order_gkey
-    LEFT JOIN inv_eq_base_order_item bk_item_pivot
-        ON bk_item_pivot.eqo_gkey = bk.gkey
-    LEFT JOIN ord_equipment_order_items bk_item
-        ON bk_item.gkey = bk_item_pivot.gkey
-    LEFT JOIN ref_commodity commodity
-        ON commodity.gkey = bk_item.commodity_gkey
-    WHERE appt.state = 'CREATED'
-        AND appt.gate_gkey = 53`,
+    `,
 
 
     /**
@@ -389,12 +438,14 @@ export const N4Queries = {
         appt.id AS Cita,
         DATEADD(HOUR, 5, slot.start_date) AS Fecha,
         gat.eqo_nbr AS Booking,
+        appt.order_gkey AS OrderGkey,
+        appt.vessel_visit_gkey AS VesselVisitGkey,
         gat.line_id AS Linea,
         shi.name AS Cliente,
         unit.id AS Contenedor,
         gat.flex_string24 AS Tecnologia,
-        com.id AS Producto,
-        CONCAT(car.id, ' - ', ves.name) AS Nave,
+        'N.E.' AS Producto,
+        'N.E.' AS Nave,
         truc.truck_id AS Placa,
         gat.chs_id AS Carreta,
         CASE 
@@ -418,16 +469,8 @@ export const N4Queries = {
     FROM road_truck_transactions gat
     LEFT JOIN inv_unit unit ON unit.gkey = gat.unit_gkey
     LEFT JOIN road_gate_appointment appt ON appt.id = gat.appointment_nbr
-    LEFT JOIN inv_eq_base_order ordb ON ordb.gkey = appt.order_gkey
-    LEFT JOIN inv_eq_base_order_item ord ON ord.eqo_gkey = ordb.gkey
-    LEFT JOIN ord_equipment_order_items oreq ON oreq.gkey = ord.gkey
-    LEFT JOIN ref_commodity com ON com.gkey = oreq.commodity_gkey
     LEFT JOIN ref_bizunit_scoped shi ON shi.gkey = appt.shipper_gkey
     LEFT JOIN road_truck_visit_details truc ON truc.tvdtls_gkey = gat.truck_visit_gkey
-    LEFT JOIN argo_carrier_visit car ON car.gkey = ordb.vessel_visit_gkey
-    LEFT JOIN argo_visit_details del ON car.cvcvd_gkey = del.gkey
-    LEFT JOIN vsl_vessel_visit_details vis ON del.gkey = vis.vvd_gkey
-    LEFT JOIN vsl_vessels ves ON ves.gkey = vis.vessel_gkey
     LEFT JOIN road_appt_time_slot slot ON slot.gkey = appt.time_slot_gkey
     LEFT JOIN ref_routing_point pod ON pod.gkey = unit.pod1_gkey
     LEFT JOIN Stages stg ON stg.tran_gkey = gat.gkey

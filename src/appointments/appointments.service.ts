@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { N4Service } from '../database/n4/n4.service';
 import { RedisService } from '../database/redis/redis.service';
-import { CACHE_KEYS } from '../common/constants/cache-keys.constant';
+import { CACHE_KEYS, CACHE_TTL } from '../common/constants/cache-keys.constant';
 import { AppointmentResult } from '../database/n4/n4.interfaces';
 import type { PendingAppointmentResult } from '../database/n4/n4.interfaces';
 import {
@@ -48,9 +48,15 @@ export class AppointmentsService {
    */
   async fetchAndCacheAppointments(): Promise<AppointmentsResponseDto> {
     const results = await this.n4Service.getAppointmentsInProgress();
+    const vesselNamesByCarrierVisit =
+      await this.resolveVesselNamesByCarrierVisit(results);
+    const orderInfoByOrderGkey =
+      await this.resolveOrderInfoByOrderGkey(results);
 
     const appointments: AppointmentInProgressDto[] = results
-      .map((r) => this.mapAppointment(r))
+      .map((r) =>
+        this.mapAppointment(r, vesselNamesByCarrierVisit, orderInfoByOrderGkey),
+      )
       .sort((a, b) => {
         // Últimas actualizaciones primero (por fecha de stage actual, desc)
         const dateA = a.fechaStage ? new Date(a.fechaStage).getTime() : 0;
@@ -99,9 +105,15 @@ export class AppointmentsService {
    */
   async fetchAndCachePendingAppointments(): Promise<PendingAppointmentsResponseDto> {
     const results = await this.n4Service.getPendingAppointments();
+    const vesselNamesByCarrierVisit =
+      await this.resolveVesselNamesByCarrierVisit(results);
+    const orderInfoByOrderGkey =
+      await this.resolveOrderInfoByOrderGkey(results);
 
     const appointments: PendingAppointmentDto[] = results
-      .map((r) => this.mapPendingAppointment(r))
+      .map((r) =>
+        this.mapPendingAppointment(r, vesselNamesByCarrierVisit, orderInfoByOrderGkey),
+      )
       .sort((a, b) => {
         // Ordenar por fecha ascendente (próximas primero)
         const dateA = a.fechaCita ? new Date(a.fechaCita).getTime() : 0;
@@ -126,22 +138,148 @@ export class AppointmentsService {
   /**
    * Map raw pending appointment DB result to DTO with computed estado
    */
-  private mapPendingAppointment(r: PendingAppointmentResult): PendingAppointmentDto {
+  private mapPendingAppointment(
+    r: PendingAppointmentResult,
+    vesselNamesByCarrierVisit: Map<number, string>,
+    orderInfoByOrderGkey: Map<number, { booking: string; producto: string }>,
+  ): PendingAppointmentDto {
+    const vesselVisitGkey = this.normalizeGkey(r.VesselVisitGkey);
+    const orderGkey = this.normalizeGkey(r.OrderGkey);
+
+    const vesselName =
+      vesselVisitGkey && vesselNamesByCarrierVisit.has(vesselVisitGkey)
+        ? vesselNamesByCarrierVisit.get(vesselVisitGkey)!
+        : 'N.E.';
+
+    const orderInfo =
+      orderGkey && orderInfoByOrderGkey.has(orderGkey)
+        ? orderInfoByOrderGkey.get(orderGkey)!
+        : { booking: 'N.E.', producto: 'N.E.' };
+
     return {
       cita: r.Cita,
       fechaCita: r.Fecha,
       linea: r.Linea,
-      booking: r.Booking,
+      booking: orderInfo.booking,
       placa: r.Placa,
       carreta: r.Carreta,
       cliente: r.Cliente,
       tecnologia: r.Tecnologia,
-      producto: r.Producto,
+      producto: orderInfo.producto,
       contenedor: r.Contenedor,
-      nave: r.Nave,
+      nave: vesselName,
       tipo: r.Tipo,
       estado: this.calculateEstado(r.Fecha),
     };
+  }
+
+  /**
+   * Resolve vessel labels for pending appointments using Redis cache.
+   * Cache key: appointments:vessel-by-carrier-visit:{carrierVisitGkey}
+   */
+  private async resolveVesselNamesByCarrierVisit(
+    results: Array<{ VesselVisitGkey: number | string | null }>,
+  ): Promise<Map<number, string>> {
+    const mapping = new Map<number, string>();
+
+    const carrierVisitGkeys = Array.from(
+      new Set(
+        results
+          .map((r) => this.normalizeGkey(r.VesselVisitGkey))
+          .filter((v): v is number => v !== null),
+      ),
+    );
+
+    if (carrierVisitGkeys.length === 0) return mapping;
+
+    const missingGkeys: number[] = [];
+
+    for (const gkey of carrierVisitGkeys) {
+      const cached = await this.redisService.get(
+        CACHE_KEYS.appointmentVesselByCarrierVisit(gkey),
+      );
+
+      if (cached) {
+        mapping.set(gkey, cached);
+      } else {
+        missingGkeys.push(gkey);
+      }
+    }
+
+    if (missingGkeys.length > 0) {
+      const fetched = await this.n4Service.getVesselsByCarrierVisitGkeys(
+        missingGkeys,
+      );
+
+      for (const vessel of fetched) {
+        const label = `${vessel.manifest_id} - ${vessel.vessel_name}`;
+        mapping.set(vessel.carrier_visit_gkey, label);
+
+        await this.redisService.set(
+          CACHE_KEYS.appointmentVesselByCarrierVisit(vessel.carrier_visit_gkey),
+          label,
+        );
+      }
+    }
+
+    return mapping;
+  }
+
+  /**
+   * Resolve booking/product metadata for pending appointments using Redis cache.
+   * Cache key: appointments:order-info:{orderGkey}
+   * TTL: 3 days
+   */
+  private async resolveOrderInfoByOrderGkey(
+    results: Array<{ OrderGkey: number | string | null }>,
+  ): Promise<Map<number, { booking: string; producto: string }>> {
+    const mapping = new Map<number, { booking: string; producto: string }>();
+
+    const orderGkeys = Array.from(
+      new Set(
+        results
+          .map((r) => this.normalizeGkey(r.OrderGkey))
+          .filter((v): v is number => v !== null),
+      ),
+    );
+
+    if (orderGkeys.length === 0) return mapping;
+
+    const missingGkeys: number[] = [];
+
+    for (const gkey of orderGkeys) {
+      const cached = await this.redisService.getJson<{
+        booking: string;
+        producto: string;
+      }>(CACHE_KEYS.appointmentOrderInfo(gkey));
+
+      if (cached) {
+        mapping.set(gkey, cached);
+      } else {
+        missingGkeys.push(gkey);
+      }
+    }
+
+    if (missingGkeys.length > 0) {
+      const fetched = await this.n4Service.getOrderInfoByOrderGkeys(missingGkeys);
+
+      for (const order of fetched) {
+        const payload = {
+          booking: order.booking ?? 'N.E.',
+          producto: order.commodity ?? 'N.E.',
+        };
+
+        mapping.set(order.order_gkey, payload);
+
+        await this.redisService.setJson(
+          CACHE_KEYS.appointmentOrderInfo(order.order_gkey),
+          payload,
+          CACHE_TTL.appointmentOrderInfo,
+        );
+      }
+    }
+
+    return mapping;
   }
 
   /**
@@ -167,9 +305,25 @@ export class AppointmentsService {
    * - fechaStage: fecha del stage actual
    * - tiempo: diferencia en minutos entre ahora y la fecha del pre-gate (si está en pre_gate o stages posteriores), o entre ahora y la fecha del stage actual (si está en tranquera)
    */
-  private mapAppointment(r: AppointmentResult): AppointmentInProgressDto {
+  private mapAppointment(
+    r: AppointmentResult,
+    vesselNamesByCarrierVisit: Map<number, string>,
+    orderInfoByOrderGkey: Map<number, { booking: string; producto: string }>,
+  ): AppointmentInProgressDto {
     const stageDate = this.getStageDateForCurrentStage(r);
     const now = new Date();
+    const vesselVisitGkey = this.normalizeGkey(r.VesselVisitGkey);
+    const orderGkey = this.normalizeGkey(r.OrderGkey);
+
+    const vesselName =
+      vesselVisitGkey && vesselNamesByCarrierVisit.has(vesselVisitGkey)
+        ? vesselNamesByCarrierVisit.get(vesselVisitGkey)!
+        : r.Nave ?? 'N.E.';
+
+    const orderInfo =
+      orderGkey && orderInfoByOrderGkey.has(orderGkey)
+        ? orderInfoByOrderGkey.get(orderGkey)!
+        : { booking: r.Booking ?? 'N.E.', producto: r.Producto ?? 'N.E.' };
 
 
     const tiempoMin = stageDate
@@ -189,13 +343,13 @@ export class AppointmentsService {
       stage: r.Stage,
       tiempo: tiempoMin,
       linea: r.Linea,
-      booking: r.Booking,
+      booking: orderInfo.booking,
       placa: r.Placa,
       cliente: r.Cliente,
       tecnologia: r.Tecnologia,
-      producto: r.Producto,
+      producto: orderInfo.producto,
       contenedor: r.Contenedor,
-      nave: r.Nave,
+      nave: vesselName,
       carreta: r.Carreta,
       tipo: r.Tipo,
       tiempoEir: r.TiempoEir ?? null,
@@ -223,5 +377,24 @@ export class AppointmentsService {
         // Fallback: la fecha más reciente disponible
         return r.Yard ?? r.GateIn ?? r.PreGate ?? r.Tranquera ?? null;
     }
+  }
+
+  /**
+   * SQL BIGINT can be returned as string by driver.
+   * Normalize to positive number, otherwise null.
+   */
+  private normalizeGkey(value: unknown): number | null {
+    if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+      return value;
+    }
+
+    if (typeof value === 'string') {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed) && parsed > 0) {
+        return parsed;
+      }
+    }
+
+    return null;
   }
 }

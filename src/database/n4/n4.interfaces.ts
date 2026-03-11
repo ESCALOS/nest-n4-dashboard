@@ -9,6 +9,18 @@ export interface WorkingVesselResult {
     vessel_name: string;
 }
 
+export interface VesselByCarrierVisitResult {
+    carrier_visit_gkey: number;
+    manifest_id: string;
+    vessel_name: string;
+}
+
+export interface OrderInfoResult {
+    order_gkey: number;
+    booking: string | null;
+    commodity: string | null;
+}
+
 export interface VesselOperationItemResult {
     gkey: number;
     nbr: string;
@@ -46,6 +58,8 @@ export interface AppointmentResult {
     Cita: string;
     Fecha: Date;
     Booking: string;
+    OrderGkey: number | null;
+    VesselVisitGkey: number | null;
     Linea: string;
     Cliente: string;
     Contenedor: string;
@@ -68,14 +82,13 @@ export interface PendingAppointmentResult {
     Cita: string;
     Fecha: Date;
     Linea: string;
-    Booking: string;
+    OrderGkey: number | null;
     Placa: string;
     Carreta: string;
     Cliente: string;
     Tecnologia: string;
-    Producto: string;
     Contenedor: string;
-    Nave: string;
+    VesselVisitGkey: number | null;
     Tipo: string;
 }
 

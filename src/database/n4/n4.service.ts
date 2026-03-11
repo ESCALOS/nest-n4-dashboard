@@ -11,6 +11,8 @@ import {
   AppointmentResult,
   VesselOperationItemResult,
   ManifestResult,
+  VesselByCarrierVisitResult,
+  OrderInfoResult,
   TransactionResult,
   StockpilingTicket,
   WorkingVesselResult,
@@ -35,6 +37,7 @@ export class N4Service implements OnModuleInit, OnModuleDestroy {
       options: {
         encrypt: false,
         trustServerCertificate: true,
+        appName: 'dashboard-n4'
       },
       pool: {
         max: 10,
@@ -83,6 +86,44 @@ export class N4Service implements OnModuleInit, OnModuleDestroy {
       return result.recordset;
     } catch (error) {
       this.logger.error('Error getting working vessels', error);
+      throw error;
+    }
+  }
+
+  async getVesselsByCarrierVisitGkeys(
+    carrierVisitGkeys: number[],
+  ): Promise<VesselByCarrierVisitResult[]> {
+    if (carrierVisitGkeys.length === 0) return [];
+
+    try {
+      const request = this.pool.request();
+      request.input('carrierVisitGkeys', sql.VarChar, carrierVisitGkeys.join(','));
+
+      const result = await request.query<VesselByCarrierVisitResult>(
+        N4Queries.getVesselsByCarrierVisitGkeys,
+      );
+      return result.recordset;
+    } catch (error) {
+      this.logger.error('Error getting vessels by carrier visit gkeys', error);
+      throw error;
+    }
+  }
+
+  async getOrderInfoByOrderGkeys(
+    orderGkeys: number[],
+  ): Promise<OrderInfoResult[]> {
+    if (orderGkeys.length === 0) return [];
+
+    try {
+      const request = this.pool.request();
+      request.input('orderGkeys', sql.VarChar, orderGkeys.join(','));
+
+      const result = await request.query<OrderInfoResult>(
+        N4Queries.getOrderInfoByOrderGkeys,
+      );
+      return result.recordset;
+    } catch (error) {
+      this.logger.error('Error getting order info by order gkeys', error);
       throw error;
     }
   }
