@@ -48,7 +48,7 @@ export const N4Queries = {
         SELECT
             bk.gkey AS order_gkey,
             bk.nbr AS booking,
-            rc.id AS commodity
+            rc.short_name AS commodity
         FROM inv_eq_base_order bk
         OUTER APPLY (
             SELECT MIN(oreq.commodity_gkey) AS commodity_gkey
@@ -91,7 +91,7 @@ export const N4Queries = {
       cbi.nbr AS nbr,
       COALESCE(TRY_CONVERT(DECIMAL(18,2), cbi.CUSTDFF_MANIFESTWEIGHT), 0) AS manifested_weight,
       COALESCE(TRY_CONVERT(INT, cbi.CUSTDFF_BULTOS), 0) AS manifested_goods,
-      rc.id AS commodity
+      rc.short_name AS commodity
     FROM crg_bl_item cbi
     INNER JOIN crg_bills_of_lading cbol ON cbol.gkey = cbi.bl_gkey
     INNER JOIN ref_commodity rc ON rc.gkey = cbi.commodity_gkey
@@ -107,7 +107,7 @@ export const N4Queries = {
       cbi.nbr AS nbr,
       COALESCE(TRY_CONVERT(DECIMAL(18,2), cbi.CUSTDFF_MANIFESTWEIGHT), 0) AS manifested_weight,
       COALESCE(TRY_CONVERT(INT, cbi.CUSTDFF_BULTOS), 0) AS manifested_goods,
-      rc.id AS commodity
+      rc.short_name AS commodity
     FROM crg_bl_item cbi
     INNER JOIN crg_bills_of_lading cbol ON cbol.gkey = cbi.bl_gkey
     INNER JOIN ref_commodity rc ON rc.gkey = cbi.commodity_gkey
