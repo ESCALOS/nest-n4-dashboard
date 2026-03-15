@@ -334,10 +334,12 @@ export const N4Queries = {
         ISNULL(truc.driver_name, '') AS conductor,
         ISNULL(CONVERT(VARCHAR, stg.fechaSalida, 120), '') AS fechaSalida,
         ISNULL(rtt.notes, '') AS notas,
-        ISNULL(rtt.trkco_id, '') AS rucTransportista
+        ISNULL(rtt.trkco_id, '') AS rucTransportista,
+        ISNULL(iu.flex_string12, 'SIN BODEGA') AS bodega
     FROM road_truck_transactions rtt
     INNER JOIN crg_bl_item cbi ON cbi.gkey = rtt.bl_item_gkey
     LEFT JOIN road_truck_visit_details truc ON truc.tvdtls_gkey = rtt.truck_visit_gkey
+    LEFT JOIN inv_unit iu ON iu.gkey = rtt.unit_gkey
     OUTER APPLY (
         SELECT
             MAX(CASE WHEN s.id = 'gate_out' THEN s.stage_end END) AS fechaSalida

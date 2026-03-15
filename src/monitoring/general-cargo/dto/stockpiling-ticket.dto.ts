@@ -11,4 +11,5 @@ export class StockpilingTicketDto {
     conductor: string;
     fechaSalida: string;
     rucTransportista: string;
+    bodega: string;
 }
