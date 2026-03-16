@@ -420,25 +420,11 @@ export const N4Queries = {
      * Get appointments in progress (Citas en Proceso de Atención)
      * For container operations at gate 53
      * 
-     * Returns transaction stages and inspection time (TiempoEir) for time calculations:
-     * - TiempoEir: inspection duration in minutes (from CUSTOM_INSPEIR table)
-     *   Used to calculate effective handling time by subtracting inspection duration
-     *   Returns NULL if no inspection records exist for the unit
      */
     getAppointmentsInProgress: `
-    WITH Stages AS (
-        SELECT
-            tran_gkey,
-            MAX(CASE WHEN id = 'tranquera' THEN stage_end END) AS Tranquera,
-            MAX(CASE WHEN id IN ('pre_gate','pre-gate') THEN stage_end END) AS PreGate,
-            MAX(CASE WHEN id IN ('gate_in','ingate') THEN stage_end END) AS GateIn,
-            MAX(CASE WHEN id = 'yard' THEN stage_end END) AS Yard
-        FROM road_truck_transaction_stages
-        GROUP BY tran_gkey
-    )
     SELECT
         appt.id AS Cita,
-        DATEADD(HOUR, 5, slot.start_date) AS Fecha,
+        DATEADD(HOUR,5,slot.start_date) AS Fecha,
         gat.eqo_nbr AS Booking,
         appt.order_gkey AS OrderGkey,
         appt.vessel_visit_gkey AS VesselVisitGkey,
@@ -451,13 +437,13 @@ export const N4Queries = {
         truc.truck_id AS Placa,
         gat.chs_id AS Carreta,
         CASE 
-            WHEN gat.stage_id IN ('pre-gate', 'pre_gate') THEN 'pre_gate'
+            WHEN gat.stage_id IN ('pre-gate','pre_gate') THEN 'pre_gate'
             ELSE gat.stage_id
         END AS Stage,
-        DATEADD(HOUR, 5, stg.Tranquera) AS Tranquera,
-        DATEADD(HOUR, 5, stg.PreGate) AS PreGate,
-        DATEADD(HOUR, 5, stg.GateIn) AS GateIn,
-        DATEADD(HOUR, 5, stg.Yard) AS Yard,
+        DATEADD(HOUR,5,stg.Tranquera) AS Tranquera,
+        DATEADD(HOUR,5,stg.PreGate) AS PreGate,
+        DATEADD(HOUR,5,stg.GateIn) AS GateIn,
+        DATEADD(HOUR,5,stg.Yard) AS Yard,
         CASE gat.sub_type
             WHEN 'RE' THEN 'Recepción Full'
             WHEN 'DM' THEN 'Despacho'
@@ -466,7 +452,6 @@ export const N4Queries = {
             WHEN 'DE' THEN 'Ingreso Export'
             ELSE gat.sub_type
         END AS Tipo,
-        eir.TiempoEir,
         pod.id AS PuertoDescarga
     FROM road_truck_transactions gat
     LEFT JOIN inv_unit unit ON unit.gkey = gat.unit_gkey
@@ -475,21 +460,19 @@ export const N4Queries = {
     LEFT JOIN road_truck_visit_details truc ON truc.tvdtls_gkey = gat.truck_visit_gkey
     LEFT JOIN road_appt_time_slot slot ON slot.gkey = appt.time_slot_gkey
     LEFT JOIN ref_routing_point pod ON pod.gkey = unit.pod1_gkey
-    LEFT JOIN Stages stg ON stg.tran_gkey = gat.gkey
+
     OUTER APPLY (
-        SELECT TOP 1
-            DATEDIFF(MINUTE, CUSTOMINSEIR_STARTINSP, CUSTOMINSEIR_ENDINSP) AS TiempoEir
-        FROM CUSTOM_INSPEIR
-        WHERE CUSTOMINSEIR_UFV = unit.active_ufv
-          AND (
-              (gat.sub_type = 'RE' AND CUSTOMINSEIR_GATE = 'IN' AND CUSTOMINSEIR_FREIGHT = 'FCL')
-              OR (gat.sub_type = 'DM' AND CUSTOMINSEIR_GATE = 'OUT' AND CUSTOMINSEIR_FREIGHT = 'MTY')
-              OR (gat.sub_type = 'RM' AND CUSTOMINSEIR_GATE = 'IN' AND CUSTOMINSEIR_FREIGHT = 'MTY')
-              OR (gat.sub_type NOT IN ('RE', 'DM', 'RM'))
-          )
-        ORDER BY gkey DESC
-    ) eir
-    WHERE gat.status = 'OK' AND gat.gate_gkey = 53
+        SELECT
+            MAX(CASE WHEN id = 'tranquera' THEN stage_end END) AS Tranquera,
+            MAX(CASE WHEN id IN ('pre_gate','pre-gate') THEN stage_end END) AS PreGate,
+            MAX(CASE WHEN id IN ('gate_in','ingate') THEN stage_end END) AS GateIn,
+            MAX(CASE WHEN id = 'yard' THEN stage_end END) AS Yard
+        FROM road_truck_transaction_stages s
+        WHERE s.tran_gkey = gat.gkey
+    ) stg
+
+    WHERE gat.status = 'OK'
+    AND gat.gate_gkey = 53
   `,
 
     /**

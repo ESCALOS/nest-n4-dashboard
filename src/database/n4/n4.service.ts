@@ -24,8 +24,37 @@ import {
 export class N4Service implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(N4Service.name);
   private pool: sql.ConnectionPool;
+  private readonly slowQueryThresholdMs: number;
 
-  constructor(private readonly configService: ConfigService) { }
+  constructor(private readonly configService: ConfigService) {
+    const configuredThreshold = Number(
+      this.configService.get<string | number>('n4.slowQueryThresholdMs') ?? 1000,
+    );
+    this.slowQueryThresholdMs =
+      Number.isFinite(configuredThreshold) && configuredThreshold > 0
+        ? configuredThreshold
+        : 1000;
+  }
+
+  private async executeQuery<T>(
+    request: sql.Request,
+    query: string,
+    operation: string,
+  ): Promise<sql.IResult<T>> {
+    const start = Date.now();
+    const result = await request.query<T>(query);
+    const elapsedMs = Date.now() - start;
+
+    this.logger.debug(`[N4 SQL] ${operation} completed in ${elapsedMs}ms`);
+
+    if (elapsedMs >= this.slowQueryThresholdMs) {
+      this.logger.warn(
+        `[N4 SQL] ${operation} exceeded threshold: ${elapsedMs}ms >= ${this.slowQueryThresholdMs}ms`,
+      );
+    }
+
+    return result;
+  }
 
   async onModuleInit() {
     const config: sql.config = {
@@ -71,7 +100,11 @@ export class N4Service implements OnModuleInit, OnModuleDestroy {
       const request = this.pool.request();
       request.input('manifestId', sql.VarChar, manifestId);
 
-      const result = await request.query<ManifestResult>(N4Queries.getManifest);
+      const result = await this.executeQuery<ManifestResult>(
+        request,
+        N4Queries.getManifest,
+        'getManifest',
+      );
       return result.recordset[0] || null;
     } catch (error) {
       this.logger.error(`Error getting manifest ${manifestId}`, error);
@@ -82,7 +115,11 @@ export class N4Service implements OnModuleInit, OnModuleDestroy {
   async getWorkingVessels(): Promise<WorkingVesselResult[]> {
     try {
       const request = this.pool.request();
-      const result = await request.query<WorkingVesselResult>(N4Queries.getWorkingVessels);
+      const result = await this.executeQuery<WorkingVesselResult>(
+        request,
+        N4Queries.getWorkingVessels,
+        'getWorkingVessels',
+      );
       return result.recordset;
     } catch (error) {
       this.logger.error('Error getting working vessels', error);
@@ -99,8 +136,10 @@ export class N4Service implements OnModuleInit, OnModuleDestroy {
       const request = this.pool.request();
       request.input('carrierVisitGkeys', sql.VarChar, carrierVisitGkeys.join(','));
 
-      const result = await request.query<VesselByCarrierVisitResult>(
+      const result = await this.executeQuery<VesselByCarrierVisitResult>(
+        request,
         N4Queries.getVesselsByCarrierVisitGkeys,
+        'getVesselsByCarrierVisitGkeys',
       );
       return result.recordset;
     } catch (error) {
@@ -118,8 +157,10 @@ export class N4Service implements OnModuleInit, OnModuleDestroy {
       const request = this.pool.request();
       request.input('orderGkeys', sql.VarChar, orderGkeys.join(','));
 
-      const result = await request.query<OrderInfoResult>(
+      const result = await this.executeQuery<OrderInfoResult>(
+        request,
         N4Queries.getOrderInfoByOrderGkeys,
+        'getOrderInfoByOrderGkeys',
       );
       return result.recordset;
     } catch (error) {
@@ -137,7 +178,11 @@ export class N4Service implements OnModuleInit, OnModuleDestroy {
       const request = this.pool.request();
       request.input('cvGkey', sql.BigInt, cvGkey);
 
-      const result = await request.query<VesselOperationItemResult>(isAs ? N4Queries.getBLItemsAS : N4Queries.getBLItems);
+      const result = await this.executeQuery<VesselOperationItemResult>(
+        request,
+        isAs ? N4Queries.getBLItemsAS : N4Queries.getBLItems,
+        isAs ? 'getBLItemsAS' : 'getBLItems',
+      );
       return result.recordset;
     } catch (error) {
       this.logger.error(`Error getting BL items for cvGkey ${cvGkey}`, error);
@@ -150,8 +195,10 @@ export class N4Service implements OnModuleInit, OnModuleDestroy {
       const request = this.pool.request();
       request.input('cvGkey', sql.BigInt, cvGkey);
 
-      const result = await request.query<{ has_maiz: number }>(
+      const result = await this.executeQuery<{ has_maiz: number }>(
+        request,
         N4Queries.hasMaizCommodity,
+        'hasMaizCommodity',
       );
       return result.recordset.length > 0;
     } catch (error) {
@@ -172,8 +219,10 @@ export class N4Service implements OnModuleInit, OnModuleDestroy {
       request.input('cvGkey', sql.BigInt, cvGkey);
       request.input('blPrefix', sql.VarChar, `${prefix}%`);
 
-      const result = await request.query<VesselOperationItemResult>(
+      const result = await this.executeQuery<VesselOperationItemResult>(
+        request,
         N4Queries.getBLItemsByPrefix,
+        'getBLItemsByPrefix',
       );
       return result.recordset;
     } catch (error) {
@@ -193,7 +242,11 @@ export class N4Service implements OnModuleInit, OnModuleDestroy {
       const request = this.pool.request();
       request.input('vvdGkey', sql.BigInt, vvdGkey);
 
-      const result = await request.query<VesselOperationItemResult>(N4Queries.getHolds);
+      const result = await this.executeQuery<VesselOperationItemResult>(
+        request,
+        N4Queries.getHolds,
+        'getHolds',
+      );
       return result.recordset;
     } catch (error) {
       this.logger.error(`Error getting bodegas for vvdGkey ${vvdGkey}`, error);
@@ -215,8 +268,10 @@ export class N4Service implements OnModuleInit, OnModuleDestroy {
       const request = this.pool.request();
       request.input('blItemGkeys', sql.VarChar, blItemGkeys.join(','));
 
-      const result = await request.query<TransactionResult>(
+      const result = await this.executeQuery<TransactionResult>(
+        request,
         isGateTransaction ? N4Queries.getGateTransactions : N4Queries.getControlPesajeTransactions,
+        isGateTransaction ? 'getGateTransactions' : 'getControlPesajeTransactions',
       );
       return result.recordset;
     } catch (error) {
@@ -232,7 +287,11 @@ export class N4Service implements OnModuleInit, OnModuleDestroy {
       const request = this.pool.request();
       request.input('blItemGkeys', sql.VarChar, blItemGkeys.join(','));
 
-      const result = await request.query<StockpilingTicket>(N4Queries.getStockpilingTickets);
+      const result = await this.executeQuery<StockpilingTicket>(
+        request,
+        N4Queries.getStockpilingTickets,
+        'getStockpilingTickets',
+      );
       return result.recordset;
     } catch (error) {
       this.logger.error('Error getting STOCKPILING tickets', error);
@@ -256,10 +315,14 @@ export class N4Service implements OnModuleInit, OnModuleDestroy {
       request.input('blItemGkeys', sql.VarChar, blItemGkeys.join(','));
       request.input('validHolds', sql.VarChar, validHolds.join(','));
 
-      const result = await request.query<HoldAlertUnitResult>(
+      const result = await this.executeQuery<HoldAlertUnitResult>(
+        request,
         isGateTransaction
           ? N4Queries.getGateUnitsWithInvalidHolds
           : N4Queries.getControlPesajeUnitsWithInvalidHolds,
+        isGateTransaction
+          ? 'getGateUnitsWithInvalidHolds'
+          : 'getControlPesajeUnitsWithInvalidHolds',
       );
       return result.recordset;
     } catch (error) {
@@ -275,8 +338,10 @@ export class N4Service implements OnModuleInit, OnModuleDestroy {
   async getAppointmentsInProgress(): Promise<AppointmentResult[]> {
     try {
       const request = this.pool.request();
-      const result = await request.query<AppointmentResult>(
+      const result = await this.executeQuery<AppointmentResult>(
+        request,
         N4Queries.getAppointmentsInProgress,
+        'getAppointmentsInProgress',
       );
       return result.recordset;
     } catch (error) {
@@ -288,8 +353,10 @@ export class N4Service implements OnModuleInit, OnModuleDestroy {
   async getPendingAppointments(): Promise<PendingAppointmentResult[]> {
     try {
       const request = this.pool.request();
-      const result = await request.query<PendingAppointmentResult>(
+      const result = await this.executeQuery<PendingAppointmentResult>(
+        request,
         N4Queries.getPendingAppointments,
+        'getPendingAppointments',
       );
       return result.recordset;
     } catch (error) {

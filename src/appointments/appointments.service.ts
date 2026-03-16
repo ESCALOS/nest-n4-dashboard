@@ -352,7 +352,6 @@ export class AppointmentsService {
       nave: vesselName,
       carreta: r.Carreta,
       tipo: r.Tipo,
-      tiempoEir: r.TiempoEir ?? null,
       puertoDescarga: r.PuertoDescarga ?? null,
     };
   }
