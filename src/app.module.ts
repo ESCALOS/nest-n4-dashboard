@@ -11,6 +11,7 @@ import { JobsModule } from './jobs/jobs.module';
 import { GeneralCargoModule } from './monitoring/general-cargo/general-cargo.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
+import { HealthController } from './health.controller';
 
 @Module({
   imports: [
@@ -38,7 +39,7 @@ import { RolesGuard } from './auth/guards/roles.guard';
     // Background jobs
     JobsModule,
   ],
-  controllers: [],
+  controllers: [HealthController],
   providers: [
     // Global JWT authentication guard
     {

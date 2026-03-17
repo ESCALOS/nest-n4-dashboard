@@ -9,7 +9,7 @@ import {
   Logger,
   ValidationPipe,
 } from '@nestjs/common';
-import { Observable, switchMap, startWith, map, finalize } from 'rxjs';
+import { Observable, switchMap, startWith, map, finalize, interval, merge } from 'rxjs';
 import { GeneralCargoService } from './general-cargo.service';
 import { GeneralCargoEventService } from './general-cargo-event.service';
 import { OperationVesselRequestDto } from './dto/operation-vessel-request.dto';
@@ -49,7 +49,7 @@ export class GeneralCargoController {
     );
 
     // Emit immediately, then on every refresh signal
-    return this.eventService.refresh$.pipe(
+    const data$ = this.eventService.refresh$.pipe(
       startWith(undefined),
       switchMap(() =>
         this.fetchData(manifest_id, operation_type),
@@ -57,6 +57,16 @@ export class GeneralCargoController {
       map((response) => ({
         data: response,
       })),
+    );
+
+    const heartbeat$ = interval(10_000).pipe(
+      map(() => ({
+        type: 'heartbeat',
+        data: { timestamp: new Date().toISOString() },
+      } as MessageEvent)),
+    );
+
+    return merge(data$, heartbeat$).pipe(
       finalize(() =>
         this.logger.log(
           `SSE connection closed — manifest: ${manifest_id}, type: ${operation_type}`,
@@ -75,7 +85,7 @@ export class GeneralCargoController {
   operationsStream(): Observable<MessageEvent> {
     this.logger.log('SSE operations connection opened');
 
-    return this.eventService.operations$.pipe(
+    const data$ = this.eventService.operations$.pipe(
       startWith(undefined),
       switchMap(() =>
         new Observable<MessageEvent>((subscriber) => {
@@ -92,6 +102,16 @@ export class GeneralCargoController {
             });
         }),
       ),
+    );
+
+    const heartbeat$ = interval(10_000).pipe(
+      map(() => ({
+        type: 'heartbeat',
+        data: { timestamp: new Date().toISOString() },
+      } as MessageEvent)),
+    );
+
+    return merge(data$, heartbeat$).pipe(
       finalize(() => this.logger.log('SSE operations connection closed')),
     );
   }

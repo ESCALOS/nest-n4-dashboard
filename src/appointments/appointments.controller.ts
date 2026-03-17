@@ -1,5 +1,5 @@
 import { Controller, Get, Sse, Logger } from '@nestjs/common';
-import { Observable, switchMap, startWith, finalize } from 'rxjs';
+import { Observable, switchMap, startWith, finalize, interval, map, merge } from 'rxjs';
 import { AppointmentsService } from './appointments.service';
 import { AppointmentsEventService } from './appointments-event.service';
 import { AppointmentsResponseDto } from './dto/appointment-in-progress.dto';
@@ -43,7 +43,7 @@ export class AppointmentsController {
   stream(): Observable<MessageEvent> {
     this.logger.log('SSE connection opened — appointments in progress');
 
-    return this.eventService.refresh$.pipe(
+    const data$ = this.eventService.refresh$.pipe(
       startWith(undefined),
       switchMap(() =>
         new Observable<MessageEvent>((subscriber) => {
@@ -60,6 +60,16 @@ export class AppointmentsController {
             });
         }),
       ),
+    );
+
+    const heartbeat$ = interval(10_000).pipe(
+      map(() => ({
+        type: 'heartbeat',
+        data: { timestamp: new Date().toISOString() },
+      } as MessageEvent)),
+    );
+
+    return merge(data$, heartbeat$).pipe(
       finalize(() =>
         this.logger.log('SSE connection closed — appointments in progress'),
       ),
@@ -88,7 +98,7 @@ export class AppointmentsController {
   pendingStream(): Observable<MessageEvent> {
     this.logger.log('SSE connection opened — pending appointments');
 
-    return this.eventService.pendingRefresh$.pipe(
+    const data$ = this.eventService.pendingRefresh$.pipe(
       startWith(undefined),
       switchMap(() =>
         new Observable<MessageEvent>((subscriber) => {
@@ -105,6 +115,16 @@ export class AppointmentsController {
             });
         }),
       ),
+    );
+
+    const heartbeat$ = interval(10_000).pipe(
+      map(() => ({
+        type: 'heartbeat',
+        data: { timestamp: new Date().toISOString() },
+      } as MessageEvent)),
+    );
+
+    return merge(data$, heartbeat$).pipe(
       finalize(() =>
         this.logger.log('SSE connection closed — pending appointments'),
       ),
