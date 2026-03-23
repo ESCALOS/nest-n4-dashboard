@@ -2,7 +2,10 @@ import { Injectable, Logger } from '@nestjs/common';
 import { N4Service } from '../database/n4/n4.service';
 import { RedisService } from '../database/redis/redis.service';
 import { CACHE_KEYS, CACHE_TTL } from '../common/constants/cache-keys.constant';
-import { AppointmentResult } from '../database/n4/n4.interfaces';
+import {
+  AppointmentResult,
+  type AppointmentStageResult,
+} from '../database/n4/n4.interfaces';
 import type { PendingAppointmentResult } from '../database/n4/n4.interfaces';
 import {
   AppointmentInProgressDto,
@@ -13,6 +16,17 @@ import {
   type AppointmentEstado,
   PendingAppointmentDto,
 } from './dto/pending-appointment.dto';
+
+type AppointmentStageTimestamps = {
+  Tranquera: Date | null;
+  PreGate: Date | null;
+  GateIn: Date | null;
+  Yard: Date | null;
+};
+
+type AppointmentStageCachePayload = {
+  stage: string;
+} & AppointmentStageTimestamps;
 
 @Injectable()
 export class AppointmentsService {
@@ -48,14 +62,24 @@ export class AppointmentsService {
    */
   async fetchAndCacheAppointments(): Promise<AppointmentsResponseDto> {
     const results = await this.n4Service.getAppointmentsInProgress();
-    const vesselNamesByCarrierVisit =
-      await this.resolveVesselNamesByCarrierVisit(results);
-    const orderInfoByOrderGkey =
-      await this.resolveOrderInfoByOrderGkey(results);
+    const [
+      vesselNamesByCarrierVisit,
+      orderInfoByOrderGkey,
+      stageTimestampsByTranGkey,
+    ] = await Promise.all([
+      this.resolveVesselNamesByCarrierVisit(results),
+      this.resolveOrderInfoByOrderGkey(results),
+      this.resolveStageTimestamps(results),
+    ]);
 
     const appointments: AppointmentInProgressDto[] = results
       .map((r) =>
-        this.mapAppointment(r, vesselNamesByCarrierVisit, orderInfoByOrderGkey),
+        this.mapAppointment(
+          r,
+          vesselNamesByCarrierVisit,
+          orderInfoByOrderGkey,
+          stageTimestampsByTranGkey,
+        ),
       )
       .sort((a, b) => {
         // Últimas actualizaciones primero (por fecha de stage actual, desc)
@@ -283,6 +307,86 @@ export class AppointmentsService {
   }
 
   /**
+   * Resolve immutable stage timestamps by tran_gkey using Redis cache.
+   * Cache key: appointments:stages:{tranGkey}
+   * Re-fetches only when stage changes or cache miss occurs.
+   */
+  private async resolveStageTimestamps(
+    results: AppointmentResult[],
+  ): Promise<Map<number, AppointmentStageTimestamps>> {
+    const mapping = new Map<number, AppointmentStageTimestamps>();
+    const resultByTranGkey = new Map<number, AppointmentResult>();
+    const missingTranGkeys: number[] = [];
+
+    for (const row of results) {
+      const tranGkey = this.normalizeGkey(row.TranGkey);
+      if (!tranGkey) continue;
+
+      if (!resultByTranGkey.has(tranGkey)) {
+        resultByTranGkey.set(tranGkey, row);
+      }
+
+      const currentStage = this.normalizeStage(row.Stage);
+      const cached =
+        await this.redisService.getJson<AppointmentStageCachePayload>(
+          CACHE_KEYS.appointmentStages(tranGkey),
+        );
+
+      if (cached && this.normalizeStage(cached.stage) === currentStage) {
+        mapping.set(tranGkey, {
+          Tranquera: this.normalizeDate(cached.Tranquera),
+          PreGate: this.normalizeDate(cached.PreGate),
+          GateIn: this.normalizeDate(cached.GateIn),
+          Yard: this.normalizeDate(cached.Yard),
+        });
+        continue;
+      }
+
+      missingTranGkeys.push(tranGkey);
+    }
+
+    if (missingTranGkeys.length === 0) {
+      return mapping;
+    }
+
+    const fetchedStages = await this.n4Service.getAppointmentStagesByTranGkeys(
+      missingTranGkeys,
+    );
+
+    const fetchedByTranGkey = new Map<number, AppointmentStageResult>(
+      fetchedStages.map((s) => [s.TranGkey, s]),
+    );
+
+    for (const tranGkey of missingTranGkeys) {
+      const row = resultByTranGkey.get(tranGkey);
+      if (!row) continue;
+
+      const fetched = fetchedByTranGkey.get(tranGkey);
+      const timestamps: AppointmentStageTimestamps = {
+        Tranquera: this.normalizeDate(fetched?.Tranquera ?? row.Tranquera ?? null),
+        PreGate: this.normalizeDate(fetched?.PreGate ?? row.PreGate ?? null),
+        GateIn: this.normalizeDate(fetched?.GateIn ?? row.GateIn ?? null),
+        Yard: this.normalizeDate(fetched?.Yard ?? row.Yard ?? null),
+      };
+
+      mapping.set(tranGkey, timestamps);
+
+      const payload: AppointmentStageCachePayload = {
+        stage: this.normalizeStage(row.Stage),
+        ...timestamps,
+      };
+
+      await this.redisService.setJson(
+        CACHE_KEYS.appointmentStages(tranGkey),
+        payload,
+        CACHE_TTL.appointmentStages,
+      );
+    }
+
+    return mapping;
+  }
+
+  /**
    * Calcula el estado de una cita próxima basándose en la ventana de ±2 horas:
    * - vencida: now > fecha + 2h (ya pasó la ventana de atención)
    * - activa: fecha - 2h <= now <= fecha + 2h (dentro del rango de atención)
@@ -309,8 +413,21 @@ export class AppointmentsService {
     r: AppointmentResult,
     vesselNamesByCarrierVisit: Map<number, string>,
     orderInfoByOrderGkey: Map<number, { booking: string; producto: string }>,
+    stageTimestampsByTranGkey: Map<number, AppointmentStageTimestamps>,
   ): AppointmentInProgressDto {
-    const stageDate = this.getStageDateForCurrentStage(r);
+    const tranGkey = this.normalizeGkey(r.TranGkey);
+    const cachedStageTimestamps =
+      tranGkey !== null ? stageTimestampsByTranGkey.get(tranGkey) : undefined;
+
+    const stageTimestamps: AppointmentStageTimestamps =
+      cachedStageTimestamps ?? {
+        Tranquera: this.normalizeDate(r.Tranquera ?? null),
+        PreGate: this.normalizeDate(r.PreGate ?? null),
+        GateIn: this.normalizeDate(r.GateIn ?? null),
+        Yard: this.normalizeDate(r.Yard ?? null),
+      };
+
+    const stageDate = this.getStageDateForCurrentStage(r.Stage, stageTimestamps);
     const now = new Date();
     const vesselVisitGkey = this.normalizeGkey(r.VesselVisitGkey);
     const orderGkey = this.normalizeGkey(r.OrderGkey);
@@ -329,8 +446,8 @@ export class AppointmentsService {
     const tiempoMin = stageDate
       ? r.Stage === 'tranquera'
         ? Math.floor((now.getTime() - new Date(stageDate).getTime()) / 60000)
-        : r.PreGate
-          ? Math.floor((now.getTime() - new Date(r.PreGate).getTime()) / 60000)
+        : stageTimestamps.PreGate
+          ? Math.floor((now.getTime() - new Date(stageTimestamps.PreGate).getTime()) / 60000)
           : null
       : null;
 
@@ -338,8 +455,8 @@ export class AppointmentsService {
       cita: r.Cita,
       fechaCita: r.Fecha,
       fechaStage: stageDate,
-      fechaPreGate: r.PreGate,
-      fechaGateIn: r.GateIn,
+      fechaPreGate: stageTimestamps.PreGate,
+      fechaGateIn: stageTimestamps.GateIn,
       stage: r.Stage,
       tiempo: tiempoMin,
       linea: r.Linea,
@@ -361,21 +478,44 @@ export class AppointmentsService {
    * Los stages son (en orden): tranquera → pre_gate → gate_in → yard
    * Se retorna la fecha correspondiente al stage actual.
    */
-  private getStageDateForCurrentStage(r: AppointmentResult): Date | null {
-    switch (r.Stage) {
+  private getStageDateForCurrentStage(
+    stage: string,
+    timestamps: AppointmentStageTimestamps,
+  ): Date | null {
+    switch (stage) {
       case 'tranquera':
-        return r.Tranquera;
+        return timestamps.Tranquera;
       case 'pre_gate':
-        return r.PreGate;
+        return timestamps.PreGate;
       case 'gate_in':
       case 'ingate':
-        return r.GateIn;
+        return timestamps.GateIn;
       case 'yard':
-        return r.Yard;
+        return timestamps.Yard;
       default:
         // Fallback: la fecha más reciente disponible
-        return r.Yard ?? r.GateIn ?? r.PreGate ?? r.Tranquera ?? null;
+        return (
+          timestamps.Yard ??
+          timestamps.GateIn ??
+          timestamps.PreGate ??
+          timestamps.Tranquera ??
+          null
+        );
     }
+  }
+
+  private normalizeStage(stage: string | null | undefined): string {
+    if (!stage) return '';
+    if (stage === 'pre-gate') return 'pre_gate';
+    return stage;
+  }
+
+  private normalizeDate(value: unknown): Date | null {
+    if (!value) return null;
+    if (value instanceof Date) return value;
+
+    const parsed = new Date(value as string | number);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
   }
 
   /**

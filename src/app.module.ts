@@ -9,6 +9,7 @@ import { AppointmentsModule } from './appointments/appointments.module';
 import { CacheManagementModule } from './cache/cache.module';
 import { JobsModule } from './jobs/jobs.module';
 import { GeneralCargoModule } from './monitoring/general-cargo/general-cargo.module';
+import { ContainersMonitoringModule } from './monitoring/containers/containers-monitoring.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
 import { HealthController } from './health.controller';
@@ -32,6 +33,7 @@ import { HealthController } from './health.controller';
     // Business modules
     AppointmentsModule,
     GeneralCargoModule,
+    ContainersMonitoringModule,
 
     // Cache management
     CacheManagementModule,

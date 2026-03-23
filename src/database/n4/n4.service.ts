@@ -8,9 +8,13 @@ import { ConfigService } from '@nestjs/config';
 import * as sql from 'mssql';
 import { N4Queries } from './n4.queries';
 import {
+  AppointmentStageResult,
   AppointmentResult,
   VesselOperationItemResult,
   ManifestResult,
+  ContainerManifestResult,
+  ContainerMonitoringResult,
+  ContainerMonitoringRefreshResult,
   VesselByCarrierVisitResult,
   OrderInfoResult,
   TransactionResult,
@@ -108,6 +112,25 @@ export class N4Service implements OnModuleInit, OnModuleDestroy {
       return result.recordset[0] || null;
     } catch (error) {
       this.logger.error(`Error getting manifest ${manifestId}`, error);
+      throw error;
+    }
+  }
+
+  async getContainerManifest(
+    manifestId: string,
+  ): Promise<ContainerManifestResult | null> {
+    try {
+      const request = this.pool.request();
+      request.input('manifestId', sql.VarChar, manifestId);
+
+      const result = await this.executeQuery<ContainerManifestResult>(
+        request,
+        N4Queries.getContainerManifest,
+        'getContainerManifest',
+      );
+      return result.recordset[0] || null;
+    } catch (error) {
+      this.logger.error(`Error getting container manifest ${manifestId}`, error);
       throw error;
     }
   }
@@ -350,6 +373,27 @@ export class N4Service implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  async getAppointmentStagesByTranGkeys(
+    tranGkeys: number[],
+  ): Promise<AppointmentStageResult[]> {
+    if (tranGkeys.length === 0) return [];
+
+    try {
+      const request = this.pool.request();
+      request.input('tranGkeys', sql.VarChar, tranGkeys.join(','));
+
+      const result = await this.executeQuery<AppointmentStageResult>(
+        request,
+        N4Queries.getAppointmentStagesByTranGkeys,
+        'getAppointmentStagesByTranGkeys',
+      );
+      return result.recordset;
+    } catch (error) {
+      this.logger.error('Error getting appointment stages by tran gkeys', error);
+      throw error;
+    }
+  }
+
   async getPendingAppointments(): Promise<PendingAppointmentResult[]> {
     try {
       const request = this.pool.request();
@@ -361,6 +405,50 @@ export class N4Service implements OnModuleInit, OnModuleDestroy {
       return result.recordset;
     } catch (error) {
       this.logger.error('Error getting pending appointments', error);
+      throw error;
+    }
+  }
+
+  async getContainerMonitoringFull(
+    carrierVisitGkey: number,
+  ): Promise<ContainerMonitoringResult[]> {
+    try {
+      const request = this.pool.request();
+      request.input('carrierVisitGkey', sql.BigInt, carrierVisitGkey);
+
+      const result = await this.executeQuery<ContainerMonitoringResult>(
+        request,
+        N4Queries.getContainerMonitoringFull,
+        'getContainerMonitoringFull',
+      );
+      return result.recordset;
+    } catch (error) {
+      this.logger.error(
+        `Error getting container monitoring full for carrier visit ${carrierVisitGkey}`,
+        error,
+      );
+      throw error;
+    }
+  }
+
+  async getContainerMonitoringRefresh(
+    carrierVisitGkey: number,
+  ): Promise<ContainerMonitoringRefreshResult[]> {
+    try {
+      const request = this.pool.request();
+      request.input('carrierVisitGkey', sql.BigInt, carrierVisitGkey);
+
+      const result = await this.executeQuery<ContainerMonitoringRefreshResult>(
+        request,
+        N4Queries.getContainerMonitoringRefresh,
+        'getContainerMonitoringRefresh',
+      );
+      return result.recordset;
+    } catch (error) {
+      this.logger.error(
+        `Error getting container monitoring refresh for carrier visit ${carrierVisitGkey}`,
+        error,
+      );
       throw error;
     }
   }

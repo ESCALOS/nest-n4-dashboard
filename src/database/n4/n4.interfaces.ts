@@ -4,6 +4,14 @@ export interface ManifestResult {
     vessel_name: string;
 }
 
+export interface ContainerManifestResult {
+    gkey: number;
+    manifest_id: string;
+    vvd_gkey: number;
+    vessel_name: string;
+    cargo_type: string | null;
+}
+
 export interface WorkingVesselResult {
     manifest_id: string;
     vessel_name: string;
@@ -56,6 +64,7 @@ export interface StockpilingTicket {
 }
 
 export interface AppointmentResult {
+    TranGkey: number;
     Cita: string;
     Fecha: Date;
     Booking: string;
@@ -70,12 +79,20 @@ export interface AppointmentResult {
     Placa: string;
     Carreta: string;
     Stage: string;
+    Tranquera?: Date | null;
+    PreGate?: Date | null;
+    GateIn?: Date | null;
+    Yard?: Date | null;
+    Tipo: string;
+    PuertoDescarga: string;
+}
+
+export interface AppointmentStageResult {
+    TranGkey: number;
     Tranquera: Date | null;
     PreGate: Date | null;
     GateIn: Date | null;
     Yard: Date | null;
-    Tipo: string;
-    PuertoDescarga: string;
 }
 
 export interface PendingAppointmentResult {
@@ -95,4 +112,37 @@ export interface PendingAppointmentResult {
 export interface HoldAlertUnitResult {
     unit_id: string;
     hold: string;
+}
+
+export interface ContainerMonitoringResult {
+    unit_gkey: number;
+    container_number: string;
+    iso_type: string | null;
+    technology: string | null;
+    nominal_length: number | null;
+    freight_kind: string | null;
+    category: string | null;
+    transit_state: string | null;
+    position: string | null;
+    arrival_position: string | null;
+    planned_position: string | null;
+    actual_ib_cv: number | null;
+    actual_ob_cv: number | null;
+    restow_typ: string | null;
+}
+
+export interface ContainerMonitoringRefreshResult {
+    unit_gkey: number;
+    container_number: string;
+    iso_type: string | null;
+    technology: string | null;
+    nominal_length: number | null;
+    freight_kind: string | null;
+    category: string | null;
+    transit_state: string | null;
+    position: string | null;
+    arrival_position: string | null;
+    actual_ib_cv: number | null;
+    actual_ob_cv: number | null;
+    restow_typ: string | null;
 }

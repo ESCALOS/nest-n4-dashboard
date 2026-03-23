@@ -17,6 +17,13 @@ export const CACHE_KEYS = {
   // Active monitored operations (manifest:operationType pairs) for background job
   monitoredOperations: 'monitoring:general-cargo:monitored-operations',
 
+  // Container monitoring keys
+  containerMonitoredVessels: 'monitoring:containers:monitored-vessels',
+  containerData: (manifestId: string) =>
+    `monitoring:containers:data:${manifestId}`,
+  containerPlannedPositions: (manifestId: string) =>
+    `monitoring:containers:planned-positions:${manifestId}`,
+
   // Appointments module keys
   appointmentsInProgress: 'appointments:in-progress',
   pendingAppointments: 'appointments:pending',
@@ -24,6 +31,8 @@ export const CACHE_KEYS = {
     `appointments:vessel-by-carrier-visit:${carrierVisitGkey}`,
   appointmentOrderInfo: (orderGkey: number) =>
     `appointments:order-info:${orderGkey}`,
+  appointmentStages: (tranGkey: number) =>
+    `appointments:stages:${tranGkey}`,
 };
 
 /**
@@ -42,4 +51,8 @@ export const CACHE_TTL = {
   // Booking/commodity metadata for pending appointments
   // Appointments are usually created up to 3 days in advance
   appointmentOrderInfo: 3 * 24 * 60 * 60,
+
+  // Stage timestamps are immutable once stage is completed.
+  // Keep them warm for a few hours to reduce repeated stage aggregation queries.
+  appointmentStages: 6 * 60 * 60,
 };

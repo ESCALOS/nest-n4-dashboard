@@ -21,6 +21,24 @@ export const N4Queries = {
   `,
 
     /**
+     * Get manifest information for containers monitoring.
+     * Validates cargo type through vsl_vessel_visit_details.flex_string01.
+     * Returns: gkey, manifest_id, vvd_gkey, vessel_name, cargo_type
+     */
+    getContainerManifest: `
+        SELECT
+                acv.gkey,
+                acv.id AS manifest_id,
+                vvvd.vvd_gkey,
+                vv.name AS vessel_name,
+                vvvd.flex_string01 AS cargo_type
+        FROM argo_carrier_visit acv
+        INNER JOIN vsl_vessel_visit_details vvvd ON vvvd.vvd_gkey = acv.cvcvd_gkey
+        INNER JOIN vsl_vessels vv ON vv.gkey = vvvd.vessel_gkey
+        WHERE acv.id = @manifestId
+    `,
+
+    /**
      * Get vessel mapping by carrier visit gkeys (batch)
      * Returns: carrier_visit_gkey, manifest_id, vessel_name
      */
@@ -354,8 +372,112 @@ export const N4Queries = {
         stg.fechaSalida;
   `,
     // ============================================
-    // APPOINTMENTS QUERIES - CONTAINERS MODULE
+    // CONTAINER MONITORING QUERIES
     // ============================================
+
+    /**
+     * Full query — used on first load to populate planned_position cache.
+     * Includes OUTER APPLY to inv_wi for planned positions.
+     *
+     * States covered:
+     *  Discharge: IMPRT/S20_INBOUND (to_discharge), STRGE/S40_YARD|S70_DEPARTED (discharged)
+     *  Load:      EXPRT/S20_INBOUND (not_arrived), EXPRT/S40_YARD (to_load), EXPRT/S60_LOADED|S70_DEPARTED (loaded)
+     *  Restow:    THRGH+RESTOW / S20_INBOUND|S40_YARD|S60_LOADED|S70_DEPARTED
+     */
+    getContainerMonitoringFull: `
+    SELECT
+        iu.gkey AS unit_gkey,
+        iu.id AS container_number,
+        ret.id AS iso_type,
+        reg.id AS technology,
+        CAST(SUBSTRING(ret.nominal_length, 4, LEN(ret.nominal_length)) AS INT) AS nominal_length,
+        iu.freight_kind,
+        iu.category,
+        fcy.transit_state,
+        fcy.last_pos_slot AS position,
+        fcy.arrive_pos_slot AS arrival_position,
+        wi.pos_slot AS planned_position,
+        fcy.actual_ib_cv,
+        fcy.actual_ob_cv,
+        fcy.restow_typ
+    FROM inv_unit_fcy_visit fcy
+    INNER JOIN inv_unit iu ON iu.gkey = fcy.unit_gkey
+    LEFT JOIN ref_equipment re ON re.gkey = iu.eq_gkey
+    LEFT JOIN ref_equip_type ret ON ret.gkey = re.eqtyp_gkey
+    LEFT JOIN ref_equip_grades reg ON reg.gkey = iu.grade_gkey
+    OUTER APPLY (
+        SELECT TOP 1 w.pos_slot
+        FROM inv_wi w
+        WHERE w.uyv_gkey = iu.active_ufv
+        ORDER BY gkey DESC
+    ) wi
+    WHERE (
+            (
+                fcy.actual_ib_cv = @carrierVisitGkey
+                AND iu.category IN ('STRGE', 'IMPRT')
+                AND fcy.transit_state IN ('S20_INBOUND', 'S40_YARD', 'S50_ECOUT', 'S60_LOADED', 'S70_DEPARTED')
+            )
+            OR
+            (
+                fcy.actual_ob_cv = @carrierVisitGkey
+                AND iu.category = 'EXPRT'
+                AND fcy.transit_state IN ('S20_INBOUND', 'S40_YARD', 'S60_LOADED', 'S70_DEPARTED')
+            )
+            OR
+            (
+                fcy.actual_ib_cv = @carrierVisitGkey
+                AND iu.category = 'THRGH'
+                AND fcy.restow_typ = 'RESTOW'
+                AND fcy.transit_state IN ('S20_INBOUND', 'S40_YARD', 'S60_LOADED', 'S70_DEPARTED')
+            )
+      )
+  `,
+
+    /**
+     * Refresh query — used every 30s. No OUTER APPLY (planned_position comes from Redis cache).
+     * Same WHERE conditions as full query.
+     */
+    getContainerMonitoringRefresh: `
+    SELECT
+        iu.gkey AS unit_gkey,
+        iu.id AS container_number,
+        ret.id AS iso_type,
+        reg.id AS technology,
+        CAST(SUBSTRING(ret.nominal_length, 4, LEN(ret.nominal_length)) AS INT) AS nominal_length,
+        iu.freight_kind,
+        iu.category,
+        fcy.transit_state,
+        fcy.last_pos_slot AS position,
+        fcy.arrive_pos_slot AS arrival_position,
+        fcy.actual_ib_cv,
+        fcy.actual_ob_cv,
+        fcy.restow_typ
+    FROM inv_unit_fcy_visit fcy
+    INNER JOIN inv_unit iu ON iu.gkey = fcy.unit_gkey
+    LEFT JOIN ref_equipment re ON re.gkey = iu.eq_gkey
+    LEFT JOIN ref_equip_type ret ON ret.gkey = re.eqtyp_gkey
+    LEFT JOIN ref_equip_grades reg ON reg.gkey = iu.grade_gkey
+    WHERE (
+            (
+                fcy.actual_ib_cv = @carrierVisitGkey
+                AND iu.category IN ('STRGE', 'IMPRT')
+                AND fcy.transit_state IN ('S20_INBOUND', 'S40_YARD', 'S50_ECOUT', 'S60_LOADED', 'S70_DEPARTED')
+            )
+            OR
+            (
+                fcy.actual_ob_cv = @carrierVisitGkey
+                AND iu.category = 'EXPRT'
+                AND fcy.transit_state IN ('S20_INBOUND', 'S40_YARD', 'S60_LOADED', 'S70_DEPARTED')
+            )
+            OR
+            (
+                fcy.actual_ib_cv = @carrierVisitGkey
+                AND iu.category = 'THRGH'
+                AND fcy.restow_typ = 'RESTOW'
+                AND fcy.transit_state IN ('S20_INBOUND', 'S40_YARD', 'S60_LOADED', 'S70_DEPARTED')
+            )
+      )
+  `,
 
     /**
      * Get pending appointments (Citas Pendientes)
@@ -423,6 +545,7 @@ export const N4Queries = {
      */
     getAppointmentsInProgress: `
     SELECT
+        gat.gkey AS TranGkey,
         appt.id AS Cita,
         DATEADD(HOUR,5,slot.start_date) AS Fecha,
         gat.eqo_nbr AS Booking,
@@ -440,10 +563,6 @@ export const N4Queries = {
             WHEN gat.stage_id IN ('pre-gate','pre_gate') THEN 'pre_gate'
             ELSE gat.stage_id
         END AS Stage,
-        DATEADD(HOUR,5,stg.Tranquera) AS Tranquera,
-        DATEADD(HOUR,5,stg.PreGate) AS PreGate,
-        DATEADD(HOUR,5,stg.GateIn) AS GateIn,
-        DATEADD(HOUR,5,stg.Yard) AS Yard,
         CASE gat.sub_type
             WHEN 'RE' THEN 'Recepción Full'
             WHEN 'DM' THEN 'Despacho'
@@ -461,18 +580,28 @@ export const N4Queries = {
     LEFT JOIN road_appt_time_slot slot ON slot.gkey = appt.time_slot_gkey
     LEFT JOIN ref_routing_point pod ON pod.gkey = unit.pod1_gkey
 
-    OUTER APPLY (
-        SELECT
-            MAX(CASE WHEN id = 'tranquera' THEN stage_end END) AS Tranquera,
-            MAX(CASE WHEN id IN ('pre_gate','pre-gate') THEN stage_end END) AS PreGate,
-            MAX(CASE WHEN id IN ('gate_in','ingate') THEN stage_end END) AS GateIn,
-            MAX(CASE WHEN id = 'yard' THEN stage_end END) AS Yard
-        FROM road_truck_transaction_stages s
-        WHERE s.tran_gkey = gat.gkey
-    ) stg
-
     WHERE gat.status = 'OK'
     AND gat.gate_gkey = 53
+  `,
+
+    /**
+     * Get appointment stages in batch by transaction gkeys.
+     * Used to avoid correlated OUTER APPLY in appointments in-progress query.
+     */
+    getAppointmentStagesByTranGkeys: `
+    SELECT
+        s.tran_gkey AS TranGkey,
+        DATEADD(HOUR,5,MAX(CASE WHEN s.id = 'tranquera' THEN s.stage_end END)) AS Tranquera,
+        DATEADD(HOUR,5,MAX(CASE WHEN s.id IN ('pre_gate','pre-gate') THEN s.stage_end END)) AS PreGate,
+        DATEADD(HOUR,5,MAX(CASE WHEN s.id IN ('gate_in','ingate') THEN s.stage_end END)) AS GateIn,
+        DATEADD(HOUR,5,MAX(CASE WHEN s.id = 'yard' THEN s.stage_end END)) AS Yard
+    FROM road_truck_transaction_stages s
+    WHERE s.tran_gkey IN (
+        SELECT TRY_CONVERT(BIGINT, value)
+        FROM STRING_SPLIT(@tranGkeys, ',')
+        WHERE TRY_CONVERT(BIGINT, value) IS NOT NULL
+    )
+    GROUP BY s.tran_gkey
   `,
 
     /**
