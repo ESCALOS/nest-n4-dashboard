@@ -48,7 +48,7 @@ export interface TransactionResult {
 
 export interface StockpilingTicket {
     codigo: string;
-    blItemNbr: string;
+    blItemGkey: number;
     gRemision: string;
     gTransportista: string;
     pesoIngreso: number;
@@ -61,6 +61,20 @@ export interface StockpilingTicket {
     notas: string;
     rucTransportista: string;
     bodega: string;
+}
+
+export interface IndirectShipmentTicket {
+    codigo: number;
+    unit: string;
+    blItemGkey: number;
+    pesoIngreso: number;
+    pesoSalida: number;
+    pesoNeto: number;
+    bodega: string;
+    tracto: string;
+    chassis: string;
+    conductor: string;
+    fechaSalida: string;
 }
 
 export interface AppointmentResult {

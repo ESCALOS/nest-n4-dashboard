@@ -19,6 +19,7 @@ import {
   OrderInfoResult,
   TransactionResult,
   StockpilingTicket,
+  IndirectShipmentTicket,
   WorkingVesselResult,
   HoldAlertUnitResult,
   PendingAppointmentResult,
@@ -318,6 +319,25 @@ export class N4Service implements OnModuleInit, OnModuleDestroy {
       return result.recordset;
     } catch (error) {
       this.logger.error('Error getting STOCKPILING tickets', error);
+      throw error;
+    }
+  }
+
+  async getIndirectShipmentTickets(blItemGkeys: number[]): Promise<IndirectShipmentTicket[]> {
+    if (blItemGkeys.length === 0) return [];
+
+    try {
+      const request = this.pool.request();
+      request.input('blItemGkeys', sql.VarChar, blItemGkeys.join(','));
+
+      const result = await this.executeQuery<IndirectShipmentTicket>(
+        request,
+        N4Queries.getIndirectShipmentTickets,
+        'getIndirectShipmentTickets',
+      );
+      return result.recordset;
+    } catch (error) {
+      this.logger.error('Error getting INDIRECT SHIPMENT tickets', error);
       throw error;
     }
   }

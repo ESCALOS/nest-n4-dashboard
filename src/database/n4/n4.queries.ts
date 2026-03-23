@@ -241,23 +241,27 @@ export const N4Queries = {
         SUM(ISNULL(TRY_CAST(iu.flex_string09 AS INT), 0)) AS total_goods,
         SUM(ISNULL(ciwt.CUSTOMWGTRAN_NETWEIGHT, 0)) AS total_weight
     FROM CUSTOM_IND_WEIGHING_TRANS ciwt
-    LEFT JOIN inv_unit iu 
+    LEFT JOIN inv_unit iu
         ON iu.id = ciwt.CUSTOMWGTRAN_CTRNBR
-    LEFT JOIN inv_unit_fcy_visit fcy 
+    LEFT JOIN inv_unit_fcy_visit fcy
         ON fcy.unit_gkey = iu.gkey
-    LEFT JOIN srv_event evento 
-        ON evento.applied_to_natural_key = iu.id
-        AND evento.event_type_gkey = 17
+    OUTER APPLY (
+        SELECT TOP 1 e.placed_time
+        FROM srv_event e
+        WHERE e.applied_to_natural_key = ciwt.CUSTOMWGTRAN_CTRNBR
+          AND e.event_type_gkey = 17
+        ORDER BY e.gkey DESC
+    ) evnt
     CROSS APPLY (
         SELECT
             ISNULL(UPPER(iu.flex_string12), 'SIN BODEGA') AS hold,
             CASE
-                WHEN DATEPART(HOUR, evento.placed_time) < 8 THEN
-                    FORMAT(evento.placed_time, 'dd-MM-yyyy') + ' 00:00 - 07:59'
-                WHEN DATEPART(HOUR, evento.placed_time) < 16 THEN
-                    FORMAT(evento.placed_time, 'dd-MM-yyyy') + ' 08:00 - 15:59'
+                WHEN DATEPART(HOUR, evnt.placed_time) < 8 THEN
+                    FORMAT(evnt.placed_time, 'dd-MM-yyyy') + ' 00:00 - 07:59'
+                WHEN DATEPART(HOUR, evnt.placed_time) < 16 THEN
+                    FORMAT(evnt.placed_time, 'dd-MM-yyyy') + ' 08:00 - 15:59'
                 ELSE
-                    FORMAT(evento.placed_time, 'dd-MM-yyyy') + ' 16:00 - 23:59'
+                    FORMAT(evnt.placed_time, 'dd-MM-yyyy') + ' 16:00 - 23:59'
             END AS shift
     ) calc
     WHERE iu.category = 'EXPRT'
@@ -336,12 +340,13 @@ export const N4Queries = {
 
     /**
      * Get stockpiling tickets detail
-     * Returns detailed information of tickets for stockpiling operations
+     * Returns detailed information of tickets for stockpiling operations.
+     * blItemNbr is resolved in the service layer from Redis cache (blItemGkey is returned instead).
      */
     getStockpilingTickets: `
     SELECT
         rtt.nbr AS codigo,
-        cbi.nbr AS blItemNbr,
+        rtt.bl_item_gkey AS blItemGkey,
         rtt.flex_string20 AS gRemision,
         rtt.flex_string21 AS gTransportista,
         ISNULL(rtt.scale_weight, 0) AS pesoIngreso,
@@ -355,7 +360,6 @@ export const N4Queries = {
         ISNULL(rtt.trkco_id, '') AS rucTransportista,
         ISNULL(iu.flex_string12, 'SIN BODEGA') AS bodega
     FROM road_truck_transactions rtt
-    INNER JOIN crg_bl_item cbi ON cbi.gkey = rtt.bl_item_gkey
     LEFT JOIN road_truck_visit_details truc ON truc.tvdtls_gkey = rtt.truck_visit_gkey
     LEFT JOIN inv_unit iu ON iu.gkey = rtt.unit_gkey
     OUTER APPLY (
@@ -368,8 +372,49 @@ export const N4Queries = {
       AND rtt.status = 'COMPLETE'
       AND rtt.gate_gkey <> 54
     ORDER BY
-        cbi.nbr,
+        rtt.bl_item_gkey,
         stg.fechaSalida;
+  `,
+
+    // ============================================
+    // INDIRECT SHIPMENT TICKETS QUERY
+    // ============================================
+
+    /**
+     * Get indirect shipment (embarque indirecto) tickets detail.
+     * Filtered by BL item gkeys (CUSTOMWGTRAN_BL_ITEM IN ...).
+     * blItemNbr is resolved in the service layer from Redis cache.
+     * fechaSalida = last event type 17 per unit (OUTER APPLY TOP 1 ORDER BY gkey DESC).
+     * pesoNeto calculated in SQL.
+     * @param blItemGkeys - comma-separated BL item gkeys
+     */
+    getIndirectShipmentTickets: `
+    SELECT
+        ciwt.gkey AS codigo,
+        ciwt.CUSTOMWGTRAN_CTRNBR AS unit,
+        ciwt.CUSTOMWGTRAN_BL_ITEM AS blItemGkey,
+        ISNULL(ciwt.CUSTOMWGTRAN_WEIGHT2, 0) AS pesoIngreso,
+        ISNULL(ciwt.CUSTOMWGTRAN_TARE, 0) AS pesoSalida,
+        ISNULL(ciwt.CUSTOMWGTRAN_WEIGHT2, 0) - ISNULL(ciwt.CUSTOMWGTRAN_TARE, 0) AS pesoNeto,
+        ISNULL(iu.flex_string12, 'SIN BODEGA') AS bodega,
+        ISNULL(ciwt.CUSTOMWGTRAN_TRUCK_ID, '') AS tracto,
+        ISNULL(ciwt.CUSTOMWGTRAN_CHASSIS_NUM, '') AS chassis,
+        ISNULL(driv.name, '') AS conductor,
+        ISNULL(CONVERT(VARCHAR, evnt.placed_time, 120), '') AS fechaSalida
+    FROM CUSTOM_IND_WEIGHING_TRANS ciwt
+    INNER JOIN inv_unit iu ON iu.id = ciwt.CUSTOMWGTRAN_CTRNBR
+    LEFT JOIN road_truck_drivers driv ON driv.gkey = ciwt.CUSTOMWGTRAN_DRIVER
+    OUTER APPLY (
+        SELECT TOP 1 e.placed_time
+        FROM srv_event e
+        WHERE e.applied_to_natural_key = ciwt.CUSTOMWGTRAN_CTRNBR
+          AND e.event_type_gkey = 17
+        ORDER BY e.gkey DESC
+    ) evnt
+    WHERE ciwt.CUSTOMWGTRAN_BL_ITEM IN (SELECT value FROM STRING_SPLIT(@blItemGkeys, ','))
+    ORDER BY
+        ciwt.CUSTOMWGTRAN_BL_ITEM,
+        evnt.placed_time;
   `,
     // ============================================
     // CONTAINER MONITORING QUERIES

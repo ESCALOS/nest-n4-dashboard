@@ -16,6 +16,7 @@ import {
   VesselData,
 } from './dto/operation-vessel-response.dto';
 import { StockpilingTicketDto } from './dto/stockpiling-ticket.dto';
+import { IndirectShipmentTicketDto } from './dto/indirect-shipment-ticket.dto';
 
 @Injectable()
 export class GeneralCargoService {
@@ -293,10 +294,36 @@ export class GeneralCargoService {
     return alerts;
   }
 
-  async getStockpilingTickets(blItemGkeys: number[]): Promise<StockpilingTicketDto[]> {
+  async getStockpilingTickets(blItemGkeys: number[], manifestId: string): Promise<StockpilingTicketDto[]> {
     if (blItemGkeys.length === 0) return [];
 
-    return await this.n4Service.getStockpilingTickets(blItemGkeys);
+    const [rawTickets, blItems] = await Promise.all([
+      this.n4Service.getStockpilingTickets(blItemGkeys),
+      this.getBLItems(manifestId, OperationType.STOCKPILING),
+    ]);
+
+    const blItemMap = new Map(blItems.map(item => [item.gkey, item.nbr]));
+
+    return rawTickets.map(ticket => ({
+      ...ticket,
+      blItemNbr: blItemMap.get(ticket.blItemGkey) ?? String(ticket.blItemGkey),
+    }));
+  }
+
+  async getIndirectShipmentTickets(blItemGkeys: number[], manifestId: string): Promise<IndirectShipmentTicketDto[]> {
+    if (blItemGkeys.length === 0) return [];
+
+    const [rawTickets, blItems] = await Promise.all([
+      this.n4Service.getIndirectShipmentTickets(blItemGkeys),
+      this.getBLItems(manifestId, OperationType.INDIRECT_LOADING),
+    ]);
+
+    const blItemMap = new Map(blItems.map(item => [item.gkey, item.nbr]));
+
+    return rawTickets.map(ticket => ({
+      ...ticket,
+      blItemNbr: blItemMap.get(ticket.blItemGkey) ?? String(ticket.blItemGkey),
+    }));
   }
 
   /**

@@ -220,10 +220,11 @@ export class GeneralCargoController {
 
   /**
    * Get stockpiling tickets detail
-   * GET /monitoring/general-cargo/stockpiling-tickets?blItemGkeys=123,456,789
+   * GET /monitoring/general-cargo/stockpiling-tickets?manifestId=2026-110&blItemGkeys=123,456,789
    */
   @Get('stockpiling-tickets')
   async getStockpilingTickets(
+    @Query('manifestId') manifestId: string,
     @Query('blItemGkeys') blItemGkeys: string,
   ): Promise<{ success: boolean; data: any[] }> {
     if (!blItemGkeys) {
@@ -231,7 +232,26 @@ export class GeneralCargoController {
     }
 
     const gkeys = blItemGkeys.split(',').map(Number).filter(n => !isNaN(n));
-    const tickets = await this.generalCargoService.getStockpilingTickets(gkeys);
+    const tickets = await this.generalCargoService.getStockpilingTickets(gkeys, manifestId);
+
+    return { success: true, data: tickets };
+  }
+
+  /**
+   * Get indirect shipment (embarque indirecto) tickets detail
+   * GET /monitoring/general-cargo/indirect-shipment-tickets?manifestId=2026-110&blItemGkeys=123,456,789
+   */
+  @Get('indirect-shipment-tickets')
+  async getIndirectShipmentTickets(
+    @Query('manifestId') manifestId: string,
+    @Query('blItemGkeys') blItemGkeys: string,
+  ): Promise<{ success: boolean; data: any[] }> {
+    if (!blItemGkeys) {
+      return { success: true, data: [] };
+    }
+
+    const gkeys = blItemGkeys.split(',').map(Number).filter(n => !isNaN(n));
+    const tickets = await this.generalCargoService.getIndirectShipmentTickets(gkeys, manifestId);
 
     return { success: true, data: tickets };
   }
