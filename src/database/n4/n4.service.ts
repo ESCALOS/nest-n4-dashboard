@@ -15,6 +15,7 @@ import {
   ContainerManifestResult,
   ContainerMonitoringResult,
   ContainerMonitoringRefreshResult,
+  ContainerOperationTimelineResult,
   VesselByCarrierVisitResult,
   OrderInfoResult,
   TransactionResult,
@@ -467,6 +468,29 @@ export class N4Service implements OnModuleInit, OnModuleDestroy {
     } catch (error) {
       this.logger.error(
         `Error getting container monitoring refresh for carrier visit ${carrierVisitGkey}`,
+        error,
+      );
+      throw error;
+    }
+  }
+
+  async getContainerOperationTimeline(
+    carrierVisitGkey: number,
+  ): Promise<ContainerOperationTimelineResult[]> {
+    try {
+      const request = this.pool.request();
+      request.input('carrierVisitGkey', sql.BigInt, carrierVisitGkey);
+
+      const result = await this.executeQuery<ContainerOperationTimelineResult>(
+        request,
+        N4Queries.getContainerOperationTimeline,
+        'getContainerOperationTimeline',
+      );
+
+      return result.recordset;
+    } catch (error) {
+      this.logger.error(
+        `Error getting container operation timeline for carrier visit ${carrierVisitGkey}`,
         error,
       );
       throw error;

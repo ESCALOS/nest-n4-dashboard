@@ -31,7 +31,8 @@ export const N4Queries = {
                 acv.id AS manifest_id,
                 vvvd.vvd_gkey,
                 vv.name AS vessel_name,
-                vvvd.flex_string01 AS cargo_type
+                vvvd.flex_string01 AS cargo_type,
+                vvvd.ib_vyg AS voyage
         FROM argo_carrier_visit acv
         INNER JOIN vsl_vessel_visit_details vvvd ON vvvd.vvd_gkey = acv.cvcvd_gkey
         INNER JOIN vsl_vessels vv ON vv.gkey = vvvd.vessel_gkey
@@ -525,40 +526,61 @@ export const N4Queries = {
   `,
 
     /**
+     * Get first/last movement timestamps per operation for containers.
+     * RESTOW rule: move_kind='DSCH' over THRGH + RESTOW + actual_ib_cv.
+     * Optimized single-scan query using CROSS APPLY for operation_type determination.
+     */
+    getContainerOperationTimeline: `
+    SELECT
+        op.operation_type,
+        MIN(DATEADD(HOUR, 5, ime.t_put)) AS start_time,
+        MAX(DATEADD(HOUR, 5, ime.t_put)) AS end_time
+    FROM inv_move_event ime
+    INNER JOIN inv_unit_fcy_visit iufv 
+        ON iufv.gkey = ime.ufv_gkey
+    INNER JOIN inv_unit iu 
+        ON iu.gkey = iufv.unit_gkey
+    CROSS APPLY (
+        SELECT CASE 
+            WHEN ime.move_kind = 'DSCH'
+                 AND iufv.actual_ib_cv = @carrierVisitGkey
+                 AND iu.category IN ('IMPRT', 'STRGE')
+            THEN 'DISCHARGE'
+
+            WHEN ime.move_kind = 'LOAD'
+                 AND iufv.actual_ob_cv = @carrierVisitGkey
+                 AND iu.category = 'EXPRT'
+            THEN 'LOAD'
+
+            WHEN ime.move_kind = 'DSCH'
+                 AND iufv.actual_ib_cv = @carrierVisitGkey
+                 AND iu.category = 'THRGH'
+                 AND iufv.restow_typ = 'RESTOW'
+            THEN 'RESTOW'
+        END AS operation_type
+    ) op
+    WHERE ime.carrier_gkey = @carrierVisitGkey
+      AND ime.t_put IS NOT NULL
+      AND op.operation_type IS NOT NULL
+    GROUP BY op.operation_type
+  `,
+
+    /**
      * Get pending appointments (Citas Pendientes)
      * For container operations at gate 53
      */
     getPendingAppointments: `
-    WITH Appt AS (
-        SELECT
-            id,
-            time_slot_gkey,
-            unit_gkey,
-            vessel_visit_gkey,
-            line_op_gkey,
-            shipper_gkey,
-            order_gkey,
-            truck_id,
-            chassis_id,
-            trans_type,
-            ufv_flex_string09
-        FROM road_gate_appointment
-        WHERE state = 'CREATED'
-        AND gate_gkey = 53
-    )
-
     SELECT
         appt.id AS Cita,
-        DATEADD(HOUR,5,slot.start_date) AS Fecha,
+        DATEADD(HOUR, 5, slot.start_date) AS Fecha,
         line.id AS Linea,
         appt.order_gkey AS OrderGkey,
         appt.truck_id AS Placa,
         appt.chassis_id AS Carreta,
         shipper.name AS Cliente,
-        COALESCE(appt.ufv_flex_string09,'N.E.') AS Tecnologia,
-        COALESCE(unit.id,'N.E.') AS Contenedor,
+        ISNULL(appt.ufv_flex_string09, 'N.E.') AS Tecnologia,
+        ISNULL(unit.id, 'N.E.') AS Contenedor,
         appt.vessel_visit_gkey AS VesselVisitGkey,
-
         CASE appt.trans_type
             WHEN 'DOE' THEN 'Recepción Full'
             WHEN 'PUM' THEN 'Despacho'
@@ -566,8 +588,7 @@ export const N4Queries = {
             WHEN 'PUE' THEN 'Retiro Full'
             ELSE 'Otro'
         END AS Tipo
-
-    FROM Appt appt
+    FROM road_gate_appointment appt
 
     LEFT JOIN road_appt_time_slot slot
         ON slot.gkey = appt.time_slot_gkey
@@ -580,6 +601,9 @@ export const N4Queries = {
 
     LEFT JOIN ref_bizunit_scoped shipper
         ON shipper.gkey = appt.shipper_gkey
+
+    WHERE appt.state = 'CREATED'
+    AND appt.gate_gkey = 53;
     `,
 
 

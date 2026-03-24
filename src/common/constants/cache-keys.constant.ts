@@ -23,6 +23,8 @@ export const CACHE_KEYS = {
     `monitoring:containers:data:${manifestId}`,
   containerPlannedPositions: (manifestId: string) =>
     `monitoring:containers:planned-positions:${manifestId}`,
+  containerOperationTimeline: (manifestId: string) =>
+    `monitoring:containers:operation-timeline:${manifestId}`,
 
   // Appointments module keys
   appointmentsInProgress: 'appointments:in-progress',

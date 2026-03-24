@@ -148,6 +148,19 @@ export class ContainersMonitoringController {
     }
 
     /**
+     * Get container operations report data for Excel export.
+     * GET /monitoring/containers/export-data?manifest_id=XXX
+     */
+    @Get('export-data')
+    async getExportData(
+        @Query(new ValidationPipe({ transform: true }))
+        query: GetContainerMonitoringQueryDto,
+    ) {
+        const data = await this.containersMonitoringService.getOperationsReport(query.manifest_id);
+        return { success: true, data };
+    }
+
+    /**
      * Remove a vessel from container monitoring.
      * DELETE /monitoring/containers/vessels
      */

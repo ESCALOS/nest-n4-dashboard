@@ -10,6 +10,7 @@ export interface ContainerManifestResult {
     vvd_gkey: number;
     vessel_name: string;
     cargo_type: string | null;
+    voyage: string | null;
 }
 
 export interface WorkingVesselResult {
@@ -159,4 +160,10 @@ export interface ContainerMonitoringRefreshResult {
     actual_ib_cv: number | null;
     actual_ob_cv: number | null;
     restow_typ: string | null;
+}
+
+export interface ContainerOperationTimelineResult {
+    operation_type: 'DISCHARGE' | 'LOAD' | 'RESTOW';
+    start_time: Date | null;
+    end_time: Date | null;
 }

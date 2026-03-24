@@ -2,17 +2,36 @@ import { BadRequestException, Injectable, Logger, NotFoundException } from '@nes
 import { N4Service } from 'src/database/n4/n4.service';
 import { RedisService } from 'src/database/redis/redis.service';
 import { CACHE_KEYS } from 'src/common/constants/cache-keys.constant';
-import { ContainerMonitoringResult, ContainerMonitoringRefreshResult } from 'src/database/n4/n4.interfaces';
+import {
+    ContainerMonitoringResult,
+    ContainerMonitoringRefreshResult,
+    ContainerOperationTimelineResult,
+} from 'src/database/n4/n4.interfaces';
 import {
     ContainerMonitoringDataDto,
     ContainerMonitoringItemDto,
     ContainerOperationStatus,
 } from './dto/container-monitoring-response.dto';
+import { ContainerOperationsReportDto } from './dto/container-operations-report.dto';
 
 export interface ContainerManifestInfo {
     id: string;
     gkey: number;
     vessel_name: string;
+    voyage: string | null;
+}
+
+type TimelineOperationKey = 'DISCHARGE' | 'LOAD' | 'RESTOW';
+
+interface TimelineOperationCache {
+    started_at: string | null;
+    ended_at: string | null;
+}
+
+interface ContainerOperationTimelineCache {
+    discharge: TimelineOperationCache;
+    loading: TimelineOperationCache;
+    restow: TimelineOperationCache;
 }
 
 @Injectable()
@@ -46,6 +65,7 @@ export class ContainersMonitoringService {
         await Promise.all([
             this.redisService.del(CACHE_KEYS.containerData(manifestId)),
             this.redisService.del(CACHE_KEYS.containerPlannedPositions(manifestId)),
+            this.redisService.del(CACHE_KEYS.containerOperationTimeline(manifestId)),
         ]);
 
         this.logger.log(`Removed container monitored vessel: ${manifestId}`);
@@ -59,7 +79,7 @@ export class ContainersMonitoringService {
                 try {
                     return await this.getManifestInfo(manifestId);
                 } catch {
-                    return { id: manifestId, gkey: 0, vessel_name: 'Desconocido' };
+                    return { id: manifestId, gkey: 0, vessel_name: 'Desconocido', voyage: null };
                 }
             }),
         );
@@ -87,6 +107,62 @@ export class ContainersMonitoringService {
         // Cache miss — do a full load
         const manifest = await this.validateAndGetManifest(manifestId);
         return this.fullLoadAndCache(manifestId, manifest);
+    }
+
+    async getOperationsReport(manifestId: string): Promise<ContainerOperationsReportDto> {
+        const [manifest, monitoringData] = await Promise.all([
+            this.getManifestInfo(manifestId),
+            this.getMonitoringData(manifestId),
+        ]);
+
+        const voyage = manifest.voyage ?? '-';
+        const timeline = await this.getOrUpdateOperationTimeline(manifestId, manifest.gkey, monitoringData);
+
+        const loadPending = monitoringData.summary.load.not_arrived + monitoringData.summary.load.to_load;
+        const loadTotal = monitoringData.summary.load.total;
+        const loadCurrent = loadTotal - loadPending;
+
+        const dischargePending = monitoringData.summary.discharge.to_discharge;
+        const dischargeTotal = monitoringData.summary.discharge.total;
+        const dischargeCurrent = dischargeTotal - dischargePending;
+
+        const restowPending = monitoringData.summary.restow.pending;
+        const restowTotal = monitoringData.summary.restow.total;
+        const restowCurrent = restowTotal - restowPending;
+
+        return {
+            manifest_id: manifest.id,
+            vessel_name: manifest.vessel_name,
+            voyage,
+            loading: {
+                start: this.formatOperationTime(timeline.loading.started_at),
+                end: loadPending === 0 && loadTotal > 0
+                    ? this.formatOperationTime(timeline.loading.ended_at)
+                    : '-',
+                total_movements: loadTotal,
+                current_movements: loadCurrent,
+                pending_movements: loadPending,
+            },
+            discharge: {
+                start: this.formatOperationTime(timeline.discharge.started_at),
+                end: dischargePending === 0 && dischargeTotal > 0
+                    ? this.formatOperationTime(timeline.discharge.ended_at)
+                    : '-',
+                total_movements: dischargeTotal,
+                current_movements: dischargeCurrent,
+                pending_movements: dischargePending,
+            },
+            restow: {
+                start: this.formatOperationTime(timeline.restow.started_at),
+                end: restowPending === 0 && restowTotal > 0
+                    ? this.formatOperationTime(timeline.restow.ended_at)
+                    : '-',
+                total_movements: restowTotal,
+                current_movements: restowCurrent,
+                pending_movements: restowPending,
+            },
+            generated_at: new Date().toISOString(),
+        };
     }
 
     /**
@@ -194,6 +270,7 @@ export class ContainersMonitoringService {
             id: manifest.manifest_id ?? manifestId,
             gkey: manifest.gkey,
             vessel_name: manifest.vessel_name,
+            voyage: manifest.voyage ?? null,
         };
     }
 
@@ -206,7 +283,102 @@ export class ContainersMonitoringService {
             id: manifest.manifest_id ?? manifestId,
             gkey: manifest.gkey,
             vessel_name: manifest.vessel_name,
+            voyage: manifest.voyage ?? null,
         };
+    }
+
+    private emptyTimelineCache(): ContainerOperationTimelineCache {
+        return {
+            discharge: { started_at: null, ended_at: null },
+            loading: { started_at: null, ended_at: null },
+            restow: { started_at: null, ended_at: null },
+        };
+    }
+
+    private async getOrUpdateOperationTimeline(
+        manifestId: string,
+        carrierVisitGkey: number,
+        data: ContainerMonitoringDataDto,
+    ): Promise<ContainerOperationTimelineCache> {
+        const cached = await this.redisService.getJson<ContainerOperationTimelineCache>(
+            CACHE_KEYS.containerOperationTimeline(manifestId),
+        );
+
+        const timeline: ContainerOperationTimelineCache = {
+            ...this.emptyTimelineCache(),
+            ...cached,
+            discharge: { ...this.emptyTimelineCache().discharge, ...cached?.discharge },
+            loading: { ...this.emptyTimelineCache().loading, ...cached?.loading },
+            restow: { ...this.emptyTimelineCache().restow, ...cached?.restow },
+        };
+
+        const results = await this.n4Service.getContainerOperationTimeline(carrierVisitGkey);
+
+        this.upsertTimelineEntry(
+            timeline.discharge,
+            this.findTimelineResult(results, 'DISCHARGE'),
+            data.summary.discharge.total,
+            data.summary.discharge.to_discharge,
+        );
+
+        this.upsertTimelineEntry(
+            timeline.loading,
+            this.findTimelineResult(results, 'LOAD'),
+            data.summary.load.total,
+            data.summary.load.not_arrived + data.summary.load.to_load,
+        );
+
+        this.upsertTimelineEntry(
+            timeline.restow,
+            this.findTimelineResult(results, 'RESTOW'),
+            data.summary.restow.total,
+            data.summary.restow.pending,
+        );
+
+        await this.redisService.setJson(CACHE_KEYS.containerOperationTimeline(manifestId), timeline);
+        return timeline;
+    }
+
+    private findTimelineResult(
+        results: ContainerOperationTimelineResult[],
+        operation: TimelineOperationKey,
+    ): ContainerOperationTimelineResult | undefined {
+        return results.find((r) => r.operation_type === operation);
+    }
+
+    private upsertTimelineEntry(
+        entry: TimelineOperationCache,
+        dbValue: ContainerOperationTimelineResult | undefined,
+        total: number,
+        pending: number,
+    ): void {
+        const startIso = dbValue?.start_time ? new Date(dbValue.start_time).toISOString() : null;
+        const endIso = dbValue?.end_time ? new Date(dbValue.end_time).toISOString() : null;
+
+        if (!entry.started_at && total > 0 && startIso) {
+            entry.started_at = startIso;
+        }
+
+        if (total > 0 && pending === 0) {
+            if (!entry.ended_at && endIso) {
+                entry.ended_at = endIso;
+            }
+        } else {
+            entry.ended_at = null;
+        }
+    }
+
+    private formatOperationTime(value: string | null | undefined): string {
+        if (!value) return '-';
+
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return '-';
+
+        const day = String(date.getDate()).padStart(2, '0');
+        const hour = String(date.getHours()).padStart(2, '0');
+        const minute = String(date.getMinutes()).padStart(2, '0');
+
+        return `${day}/ ${hour}${minute} hrs.`;
     }
 
     // ============================================
