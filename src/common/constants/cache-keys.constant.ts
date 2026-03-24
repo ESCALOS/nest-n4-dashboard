@@ -31,7 +31,7 @@ export const CACHE_KEYS = {
     `appointments:vessel-by-carrier-visit:${carrierVisitGkey}`,
   appointmentOrderInfo: (orderGkey: number) =>
     `appointments:order-info:${orderGkey}`,
-  appointmentStages: (tranGkey: number) =>
+  appointmentStages: (tranGkey: number | string) =>
     `appointments:stages:${tranGkey}`,
 };
 

@@ -394,7 +394,7 @@ export class N4Service implements OnModuleInit, OnModuleDestroy {
   }
 
   async getAppointmentStagesByTranGkeys(
-    tranGkeys: number[],
+    tranGkeys: Array<number | string>,
   ): Promise<AppointmentStageResult[]> {
     if (tranGkeys.length === 0) return [];
 

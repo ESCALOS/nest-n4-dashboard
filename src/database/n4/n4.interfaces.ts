@@ -78,7 +78,7 @@ export interface IndirectShipmentTicket {
 }
 
 export interface AppointmentResult {
-    TranGkey: number;
+    TranGkey: number | string | null;
     Cita: string;
     Fecha: Date;
     Booking: string;
@@ -102,7 +102,7 @@ export interface AppointmentResult {
 }
 
 export interface AppointmentStageResult {
-    TranGkey: number;
+    TranGkey: number | string | null;
     Tranquera: Date | null;
     PreGate: Date | null;
     GateIn: Date | null;

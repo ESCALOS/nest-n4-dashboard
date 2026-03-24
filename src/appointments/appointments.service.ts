@@ -216,13 +216,18 @@ export class AppointmentsService {
 
     if (carrierVisitGkeys.length === 0) return mapping;
 
+    const cachePairs = await Promise.all(
+      carrierVisitGkeys.map(async (gkey) => {
+        const cached = await this.redisService.get(
+          CACHE_KEYS.appointmentVesselByCarrierVisit(gkey),
+        );
+        return [gkey, cached] as const;
+      }),
+    );
+
     const missingGkeys: number[] = [];
 
-    for (const gkey of carrierVisitGkeys) {
-      const cached = await this.redisService.get(
-        CACHE_KEYS.appointmentVesselByCarrierVisit(gkey),
-      );
-
+    for (const [gkey, cached] of cachePairs) {
       if (cached) {
         mapping.set(gkey, cached);
       } else {
@@ -235,15 +240,21 @@ export class AppointmentsService {
         missingGkeys,
       );
 
+      const writePromises: Promise<void>[] = [];
+
       for (const vessel of fetched) {
         const label = `${vessel.manifest_id} - ${vessel.vessel_name}`;
         mapping.set(vessel.carrier_visit_gkey, label);
 
-        await this.redisService.set(
-          CACHE_KEYS.appointmentVesselByCarrierVisit(vessel.carrier_visit_gkey),
-          label,
+        writePromises.push(
+          this.redisService.set(
+            CACHE_KEYS.appointmentVesselByCarrierVisit(vessel.carrier_visit_gkey),
+            label,
+          ),
         );
       }
+
+      await Promise.all(writePromises);
     }
 
     return mapping;
@@ -269,14 +280,19 @@ export class AppointmentsService {
 
     if (orderGkeys.length === 0) return mapping;
 
+    const cachePairs = await Promise.all(
+      orderGkeys.map(async (gkey) => {
+        const cached = await this.redisService.getJson<{
+          booking: string;
+          producto: string;
+        }>(CACHE_KEYS.appointmentOrderInfo(gkey));
+        return [gkey, cached] as const;
+      }),
+    );
+
     const missingGkeys: number[] = [];
 
-    for (const gkey of orderGkeys) {
-      const cached = await this.redisService.getJson<{
-        booking: string;
-        producto: string;
-      }>(CACHE_KEYS.appointmentOrderInfo(gkey));
-
+    for (const [gkey, cached] of cachePairs) {
       if (cached) {
         mapping.set(gkey, cached);
       } else {
@@ -287,6 +303,8 @@ export class AppointmentsService {
     if (missingGkeys.length > 0) {
       const fetched = await this.n4Service.getOrderInfoByOrderGkeys(missingGkeys);
 
+      const writePromises: Promise<void>[] = [];
+
       for (const order of fetched) {
         const payload = {
           booking: order.booking ?? 'N.E.',
@@ -295,12 +313,16 @@ export class AppointmentsService {
 
         mapping.set(order.order_gkey, payload);
 
-        await this.redisService.setJson(
-          CACHE_KEYS.appointmentOrderInfo(order.order_gkey),
-          payload,
-          CACHE_TTL.appointmentOrderInfo,
+        writePromises.push(
+          this.redisService.setJson(
+            CACHE_KEYS.appointmentOrderInfo(order.order_gkey),
+            payload,
+            CACHE_TTL.appointmentOrderInfo,
+          ),
         );
       }
+
+      await Promise.all(writePromises);
     }
 
     return mapping;
@@ -313,60 +335,107 @@ export class AppointmentsService {
    */
   private async resolveStageTimestamps(
     results: AppointmentResult[],
-  ): Promise<Map<number, AppointmentStageTimestamps>> {
-    const mapping = new Map<number, AppointmentStageTimestamps>();
-    const resultByTranGkey = new Map<number, AppointmentResult>();
-    const missingTranGkeys: number[] = [];
+  ): Promise<Map<string, AppointmentStageTimestamps>> {
+    const mapping = new Map<string, AppointmentStageTimestamps>();
+    const resultByTranGkey = new Map<string, AppointmentResult>();
 
     for (const row of results) {
-      const tranGkey = this.normalizeGkey(row.TranGkey);
+      const tranGkey = this.normalizeBigintKey(row.TranGkey);
       if (!tranGkey) continue;
 
       if (!resultByTranGkey.has(tranGkey)) {
         resultByTranGkey.set(tranGkey, row);
       }
+    }
+
+    if (resultByTranGkey.size === 0) {
+      return mapping;
+    }
+
+    const tranGkeys = Array.from(resultByTranGkey.keys());
+
+    const cachedPairs = await Promise.all(
+      tranGkeys.map(async (tranGkey) => {
+        const cached =
+          await this.redisService.getJson<AppointmentStageCachePayload>(
+            CACHE_KEYS.appointmentStages(tranGkey),
+          );
+        return [tranGkey, cached] as const;
+      }),
+    );
+
+    const missingTranGkeys: string[] = [];
+
+    for (const [tranGkey, cached] of cachedPairs) {
+      const row = resultByTranGkey.get(tranGkey);
+      if (!row) continue;
 
       const currentStage = this.normalizeStage(row.Stage);
-      const cached =
-        await this.redisService.getJson<AppointmentStageCachePayload>(
-          CACHE_KEYS.appointmentStages(tranGkey),
-        );
 
       if (cached && this.normalizeStage(cached.stage) === currentStage) {
-        mapping.set(tranGkey, {
+        const cachedTimestamps: AppointmentStageTimestamps = {
           Tranquera: this.normalizeDate(cached.Tranquera),
           PreGate: this.normalizeDate(cached.PreGate),
           GateIn: this.normalizeDate(cached.GateIn),
           Yard: this.normalizeDate(cached.Yard),
-        });
-        continue;
+        };
+
+        if (!this.shouldRefetchStageTimestamps(currentStage, cachedTimestamps)) {
+          mapping.set(tranGkey, cachedTimestamps);
+          continue;
+        }
       }
 
       missingTranGkeys.push(tranGkey);
     }
 
-    if (missingTranGkeys.length === 0) {
+    const uniqueMissingTranGkeys = Array.from(new Set(missingTranGkeys));
+
+    if (uniqueMissingTranGkeys.length === 0) {
       return mapping;
     }
 
     const fetchedStages = await this.n4Service.getAppointmentStagesByTranGkeys(
-      missingTranGkeys,
+      uniqueMissingTranGkeys,
     );
 
-    const fetchedByTranGkey = new Map<number, AppointmentStageResult>(
-      fetchedStages.map((s) => [s.TranGkey, s]),
-    );
+    const fetchedByTranGkey = new Map<string, AppointmentStageResult>();
 
-    for (const tranGkey of missingTranGkeys) {
+    for (const fetchedStage of fetchedStages) {
+      const tranGkey = this.getStageField(fetchedStage, 'TranGkey', 'tran_gkey');
+      const normalizedTranGkey = this.normalizeBigintKey(tranGkey);
+      if (!normalizedTranGkey) continue;
+      fetchedByTranGkey.set(normalizedTranGkey, fetchedStage);
+    }
+
+    const writePromises: Promise<void>[] = [];
+
+    for (const tranGkey of uniqueMissingTranGkeys) {
       const row = resultByTranGkey.get(tranGkey);
       if (!row) continue;
 
       const fetched = fetchedByTranGkey.get(tranGkey);
       const timestamps: AppointmentStageTimestamps = {
-        Tranquera: this.normalizeDate(fetched?.Tranquera ?? row.Tranquera ?? null),
-        PreGate: this.normalizeDate(fetched?.PreGate ?? row.PreGate ?? null),
-        GateIn: this.normalizeDate(fetched?.GateIn ?? row.GateIn ?? null),
-        Yard: this.normalizeDate(fetched?.Yard ?? row.Yard ?? null),
+        Tranquera: this.normalizeDate(
+          this.getStageField(fetched, 'Tranquera', 'tranquera') ??
+          row.Tranquera ??
+          null,
+        ),
+        PreGate: this.normalizeDate(
+          this.getStageField(fetched, 'PreGate', 'pregate', 'pre_gate') ??
+          row.PreGate ??
+          null,
+        ),
+        GateIn: this.normalizeDate(
+          this.getStageField(fetched, 'GateIn', 'gatein', 'gate_in') ??
+          row.GateIn ??
+          null,
+        ),
+        Yard: this.normalizeDate(
+          this.getStageField(fetched, 'Yard', 'yard') ??
+          row.Yard ??
+          null,
+        ),
       };
 
       mapping.set(tranGkey, timestamps);
@@ -376,12 +445,16 @@ export class AppointmentsService {
         ...timestamps,
       };
 
-      await this.redisService.setJson(
-        CACHE_KEYS.appointmentStages(tranGkey),
-        payload,
-        CACHE_TTL.appointmentStages,
+      writePromises.push(
+        this.redisService.setJson(
+          CACHE_KEYS.appointmentStages(tranGkey),
+          payload,
+          CACHE_TTL.appointmentStages,
+        ),
       );
     }
+
+    await Promise.all(writePromises);
 
     return mapping;
   }
@@ -413,9 +486,9 @@ export class AppointmentsService {
     r: AppointmentResult,
     vesselNamesByCarrierVisit: Map<number, string>,
     orderInfoByOrderGkey: Map<number, { booking: string; producto: string }>,
-    stageTimestampsByTranGkey: Map<number, AppointmentStageTimestamps>,
+    stageTimestampsByTranGkey: Map<string, AppointmentStageTimestamps>,
   ): AppointmentInProgressDto {
-    const tranGkey = this.normalizeGkey(r.TranGkey);
+    const tranGkey = this.normalizeBigintKey(r.TranGkey);
     const cachedStageTimestamps =
       tranGkey !== null ? stageTimestampsByTranGkey.get(tranGkey) : undefined;
 
@@ -427,7 +500,8 @@ export class AppointmentsService {
         Yard: this.normalizeDate(r.Yard ?? null),
       };
 
-    const stageDate = this.getStageDateForCurrentStage(r.Stage, stageTimestamps);
+    const normalizedStage = this.normalizeStage(r.Stage);
+    const stageDate = this.getStageDateForCurrentStage(normalizedStage, stageTimestamps);
     const now = new Date();
     const vesselVisitGkey = this.normalizeGkey(r.VesselVisitGkey);
     const orderGkey = this.normalizeGkey(r.OrderGkey);
@@ -444,7 +518,7 @@ export class AppointmentsService {
 
 
     const tiempoMin = stageDate
-      ? r.Stage === 'tranquera'
+      ? normalizedStage === 'tranquera'
         ? Math.floor((now.getTime() - new Date(stageDate).getTime()) / 60000)
         : stageTimestamps.PreGate
           ? Math.floor((now.getTime() - new Date(stageTimestamps.PreGate).getTime()) / 60000)
@@ -457,7 +531,7 @@ export class AppointmentsService {
       fechaStage: stageDate,
       fechaPreGate: stageTimestamps.PreGate,
       fechaGateIn: stageTimestamps.GateIn,
-      stage: r.Stage,
+      stage: normalizedStage,
       tiempo: tiempoMin,
       linea: r.Linea,
       booking: orderInfo.booking,
@@ -471,6 +545,25 @@ export class AppointmentsService {
       tipo: r.Tipo,
       puertoDescarga: r.PuertoDescarga ?? null,
     };
+  }
+
+  private shouldRefetchStageTimestamps(
+    stage: string,
+    timestamps: AppointmentStageTimestamps,
+  ): boolean {
+    switch (this.normalizeStage(stage)) {
+      case 'tranquera':
+        return timestamps.Tranquera === null;
+      case 'pre_gate':
+        return timestamps.PreGate === null;
+      case 'gate_in':
+      case 'ingate':
+        return timestamps.GateIn === null;
+      case 'yard':
+        return timestamps.Yard === null;
+      default:
+        return false;
+    }
   }
 
   /**
@@ -507,6 +600,7 @@ export class AppointmentsService {
   private normalizeStage(stage: string | null | undefined): string {
     if (!stage) return '';
     if (stage === 'pre-gate') return 'pre_gate';
+    if (stage === 'ingate') return 'gate_in';
     return stage;
   }
 
@@ -523,6 +617,11 @@ export class AppointmentsService {
    * Normalize to positive number, otherwise null.
    */
   private normalizeGkey(value: unknown): number | null {
+    if (typeof value === 'bigint' && value > 0n) {
+      const asNumber = Number(value);
+      return Number.isSafeInteger(asNumber) ? asNumber : null;
+    }
+
     if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
       return value;
     }
@@ -535,5 +634,38 @@ export class AppointmentsService {
     }
 
     return null;
+  }
+
+  private normalizeBigintKey(value: unknown): string | null {
+    if (typeof value === 'bigint') {
+      return value > 0n ? value.toString() : null;
+    }
+
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      return trimmed ? trimmed : null;
+    }
+
+    if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+      return String(Math.trunc(value));
+    }
+
+    return null;
+  }
+
+  private getStageField(
+    stageRow: AppointmentStageResult | undefined,
+    ...keys: string[]
+  ): unknown {
+    if (!stageRow) return undefined;
+    const rowAsRecord = stageRow as unknown as Record<string, unknown>;
+
+    for (const key of keys) {
+      if (key in rowAsRecord) {
+        return rowAsRecord[key];
+      }
+    }
+
+    return undefined;
   }
 }

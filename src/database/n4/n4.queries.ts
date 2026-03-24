@@ -606,6 +606,7 @@ export const N4Queries = {
         gat.chs_id AS Carreta,
         CASE 
             WHEN gat.stage_id IN ('pre-gate','pre_gate') THEN 'pre_gate'
+            WHEN gat.stage_id IN ('ingate','gate_in') THEN 'gate_in'
             ELSE gat.stage_id
         END AS Stage,
         CASE gat.sub_type
