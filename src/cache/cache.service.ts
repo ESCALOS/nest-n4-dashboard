@@ -107,6 +107,28 @@ export class CacheManagementService {
   }
 
   /**
+   * Reset BL item metadata cache used by appointments in progress (general cargo)
+   */
+  async resetAppointmentBlItemInfo(blItemGkey: number): Promise<void> {
+    await Promise.all([
+      this.redisService.del(CACHE_KEYS.appointmentBlItemInfo(blItemGkey)),
+      this.redisService.del(CACHE_KEYS.generalCargoAppointmentsInProgress),
+    ]);
+
+    this.logger.log(`Reset appointment BL item cache for blItemGkey ${blItemGkey}`);
+  }
+
+  /**
+   * Reset all BL item metadata cache used by appointments in progress (general cargo)
+   */
+  async resetAllAppointmentBlItemInfo(): Promise<number> {
+    const deleted = await this.redisService.deleteByPattern('appointments:blitem-info:*');
+    await this.redisService.del(CACHE_KEYS.generalCargoAppointmentsInProgress);
+    this.logger.log(`Reset all appointment BL item cache keys: ${deleted}`);
+    return deleted;
+  }
+
+  /**
    * Reset all caches for a manifest
    * This includes manifest, bodegas, BL items, and transactions
    */

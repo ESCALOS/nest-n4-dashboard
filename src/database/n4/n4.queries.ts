@@ -86,6 +86,30 @@ export const N4Queries = {
     `,
 
     /**
+     * Get BL item mapping by BL item gkeys (batch)
+     * Returns: bl_item_gkey, permiso, commodity
+     */
+    getBlItemInfoByBlItemGkeys: `
+        SELECT
+            cbi.gkey AS bl_item_gkey,
+            cbi.nbr AS permiso,
+            rc.short_name AS commodity,
+            rbs.name AS cliente
+        FROM crg_bl_item cbi
+        LEFT JOIN ref_commodity rc
+            ON rc.gkey = cbi.commodity_gkey
+        LEFT JOIN crg_bills_of_lading cbol
+            ON cbi.bl_gkey = cbol.gkey
+        LEFT JOIN ref_bizunit_scoped rbs
+            ON rbs.gkey = cbol.shipper_gkey
+        WHERE cbi.gkey IN (
+            SELECT TRY_CONVERT(BIGINT, value)
+            FROM STRING_SPLIT(@blItemGkeys, ',')
+            WHERE TRY_CONVERT(BIGINT, value) IS NOT NULL
+        )
+    `,
+
+    /**
      * Get vessels currently in WORKING phase
      * Returns: manifest_id, vessel_name
      */
@@ -655,6 +679,54 @@ export const N4Queries = {
   `,
 
     /**
+     * Get appointments in progress for general cargo operations
+     * All road_truck_transactions except containers gate 53
+     */
+    getGeneralCargoAppointmentsInProgress: `
+    SELECT
+        gat.gkey AS TranGkey,
+        gat.nbr AS codigo,
+        gat.bl_item_gkey AS BlItemGkey,
+        cbol.cv_gkey AS VesselVisitGkey,
+        gat.gate_gkey AS GateGkey,
+        'N.E.' AS Cliente,
+        'N.E.' AS Producto,
+        'N.E.' AS Nave,
+        ISNULL(gat.chs_id, '') AS Carreta,
+        ISNULL(truc.truck_id, '') AS Tracto,
+        ISNULL(gat.chs_id, '') AS Chassis,
+        CASE 
+            WHEN gat.stage_id IN ('pre-gate','pre_gate') THEN 'pre_gate'
+            WHEN gat.stage_id IN ('ingate','gate_in') THEN 'gate_in'
+            WHEN gat.stage_id IN ('zona-espera','zona_de_espera') THEN 'zona_de_espera'
+            WHEN gat.stage_id IN ('inicio-carguio','inicio_carguio') THEN 'inicio_de_carguio'
+            ELSE gat.stage_id
+        END AS Stage,
+        CASE gat.sub_type
+            WHEN 'RE' THEN 'Embarque'
+            WHEN 'DI' THEN 'Descarga'
+            ELSE  gat.sub_type
+        END AS Tipo,
+        CASE gat.gate_gkey
+            WHEN 47 THEN 'Fraccionada'
+            WHEN 48 THEN 'Granel'
+            WHEN 49 THEN 'Proyecto'
+            WHEN 50 THEN 'Granel_AS'
+            WHEN 51 THEN 'Roro'
+            WHEN 54 THEN 'Avituallamiento'
+            ELSE CONCAT('Gate ', gat.gate_gkey)
+        END AS TipoOperativa
+    FROM road_truck_transactions gat
+    LEFT JOIN road_truck_visit_details truc ON truc.tvdtls_gkey = gat.truck_visit_gkey
+    LEFT JOIN crg_bl_item cbi ON cbi.gkey = gat.bl_item_gkey
+    LEFT JOIN crg_bills_of_lading cbol ON cbol.gkey = cbi.bl_gkey
+
+    WHERE gat.status = 'OK'
+    AND gat.gate_gkey <> 53
+    AND gat.sub_type NOT IN ('RI', 'DM')
+  `,
+
+    /**
      * Get appointment stages in batch by transaction gkeys.
      * Used to avoid correlated OUTER APPLY in appointments in-progress query.
      */
@@ -664,7 +736,10 @@ export const N4Queries = {
         DATEADD(HOUR,5,MAX(CASE WHEN s.id = 'tranquera' THEN s.stage_end END)) AS Tranquera,
         DATEADD(HOUR,5,MAX(CASE WHEN s.id IN ('pre_gate','pre-gate') THEN s.stage_end END)) AS PreGate,
         DATEADD(HOUR,5,MAX(CASE WHEN s.id IN ('gate_in','ingate') THEN s.stage_end END)) AS GateIn,
-        DATEADD(HOUR,5,MAX(CASE WHEN s.id = 'yard' THEN s.stage_end END)) AS Yard
+        DATEADD(HOUR,5,MAX(CASE WHEN s.id IN ('zona_de_espera','zona-de_espera','zona_de_espera') THEN s.stage_end END)) AS ZonaEspera,
+        DATEADD(HOUR,5,MAX(CASE WHEN s.id IN ('inicio_de_carguio','inicio-carguio','inicio_carguio') THEN s.stage_end END)) AS InicioCarguio,
+        DATEADD(HOUR,5,MAX(CASE WHEN s.id = 'yard' THEN s.stage_end END)) AS Yard,
+        DATEADD(HOUR,5,MAX(CASE WHEN s.id = 'gate_out' THEN s.stage_end END)) AS GateOut
     FROM road_truck_transaction_stages s
     WHERE s.tran_gkey IN (
         SELECT TRY_CONVERT(BIGINT, value)

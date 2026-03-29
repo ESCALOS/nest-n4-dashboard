@@ -34,6 +34,14 @@ export class AppointmentsController {
   }
 
   /**
+   * REST endpoint — get general cargo appointments in progress
+   */
+  @Get('in-progress/general-cargo')
+  async getGeneralCargoAppointmentsInProgress(): Promise<AppointmentsResponseDto> {
+    return this.appointmentsService.getGeneralCargoAppointmentsInProgress();
+  }
+
+  /**
    * SSE endpoint — the frontend subscribes here to receive
    * AppointmentsResponseDto every time data is refreshed.
    *
@@ -72,6 +80,47 @@ export class AppointmentsController {
     return merge(data$, heartbeat$).pipe(
       finalize(() =>
         this.logger.log('SSE connection closed — appointments in progress'),
+      ),
+    );
+  }
+
+  /**
+   * SSE endpoint — general cargo appointments in progress
+   * GET /appointments/in-progress/general-cargo/stream
+   */
+  @Sse('in-progress/general-cargo/stream')
+  generalCargoStream(): Observable<MessageEvent> {
+    this.logger.log('SSE connection opened — general cargo appointments in progress');
+
+    const data$ = this.eventService.refresh$.pipe(
+      startWith(undefined),
+      switchMap(() =>
+        new Observable<MessageEvent>((subscriber) => {
+          this.appointmentsService
+            .getGeneralCargoAppointmentsInProgress()
+            .then((data) => {
+              subscriber.next({ data });
+              subscriber.complete();
+            })
+            .catch((err) => {
+              this.logger.error(`Error fetching general cargo appointments: ${err.message}`);
+              subscriber.next({ data: { data: [], count: 0, timestamp: new Date() } });
+              subscriber.complete();
+            });
+        }),
+      ),
+    );
+
+    const heartbeat$ = interval(10_000).pipe(
+      map(() => ({
+        type: 'heartbeat',
+        data: { timestamp: new Date().toISOString() },
+      } as MessageEvent)),
+    );
+
+    return merge(data$, heartbeat$).pipe(
+      finalize(() =>
+        this.logger.log('SSE connection closed — general cargo appointments in progress'),
       ),
     );
   }

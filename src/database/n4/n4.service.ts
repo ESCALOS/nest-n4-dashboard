@@ -18,6 +18,7 @@ import {
   ContainerOperationTimelineResult,
   VesselByCarrierVisitResult,
   OrderInfoResult,
+  BlItemInfoResult,
   TransactionResult,
   StockpilingTicket,
   IndirectShipmentTicket,
@@ -190,6 +191,27 @@ export class N4Service implements OnModuleInit, OnModuleDestroy {
       return result.recordset;
     } catch (error) {
       this.logger.error('Error getting order info by order gkeys', error);
+      throw error;
+    }
+  }
+
+  async getBlItemInfoByBlItemGkeys(
+    blItemGkeys: number[],
+  ): Promise<BlItemInfoResult[]> {
+    if (blItemGkeys.length === 0) return [];
+
+    try {
+      const request = this.pool.request();
+      request.input('blItemGkeys', sql.VarChar, blItemGkeys.join(','));
+
+      const result = await this.executeQuery<BlItemInfoResult>(
+        request,
+        N4Queries.getBlItemInfoByBlItemGkeys,
+        'getBlItemInfoByBlItemGkeys',
+      );
+      return result.recordset;
+    } catch (error) {
+      this.logger.error('Error getting BL item info by bl item gkeys', error);
       throw error;
     }
   }
@@ -390,6 +412,21 @@ export class N4Service implements OnModuleInit, OnModuleDestroy {
       return result.recordset;
     } catch (error) {
       this.logger.error('Error getting appointments in progress', error);
+      throw error;
+    }
+  }
+
+  async getGeneralCargoAppointmentsInProgress(): Promise<AppointmentResult[]> {
+    try {
+      const request = this.pool.request();
+      const result = await this.executeQuery<AppointmentResult>(
+        request,
+        N4Queries.getGeneralCargoAppointmentsInProgress,
+        'getGeneralCargoAppointmentsInProgress',
+      );
+      return result.recordset;
+    } catch (error) {
+      this.logger.error('Error getting general cargo appointments in progress', error);
       throw error;
     }
   }

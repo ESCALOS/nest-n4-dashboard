@@ -28,11 +28,14 @@ export const CACHE_KEYS = {
 
   // Appointments module keys
   appointmentsInProgress: 'appointments:in-progress',
+  generalCargoAppointmentsInProgress: 'appointments:general-cargo:in-progress',
   pendingAppointments: 'appointments:pending',
   appointmentVesselByCarrierVisit: (carrierVisitGkey: number) =>
     `appointments:vessel-by-carrier-visit:${carrierVisitGkey}`,
   appointmentOrderInfo: (orderGkey: number) =>
     `appointments:order-info:${orderGkey}`,
+  appointmentBlItemInfo: (blItemGkey: number) =>
+    `appointments:blitem-info:${blItemGkey}`,
   appointmentStages: (tranGkey: number | string) =>
     `appointments:stages:${tranGkey}`,
 };
@@ -53,6 +56,9 @@ export const CACHE_TTL = {
   // Booking/commodity metadata for pending appointments
   // Appointments are usually created up to 3 days in advance
   appointmentOrderInfo: 3 * 24 * 60 * 60,
+
+  // BL item/commodity metadata for in-progress general cargo appointments
+  appointmentBlItemInfo: 3 * 24 * 60 * 60,
 
   // Stage timestamps are immutable once stage is completed.
   // Keep them warm for a few hours to reduce repeated stage aggregation queries.

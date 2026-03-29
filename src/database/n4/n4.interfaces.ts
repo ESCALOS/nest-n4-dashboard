@@ -30,6 +30,13 @@ export interface OrderInfoResult {
     commodity: string | null;
 }
 
+export interface BlItemInfoResult {
+    bl_item_gkey: number;
+    permiso: string | null;
+    commodity: string | null;
+    cliente: string | null;
+}
+
 export interface VesselOperationItemResult {
     gkey: number;
     nbr: string;
@@ -80,26 +87,35 @@ export interface IndirectShipmentTicket {
 
 export interface AppointmentResult {
     TranGkey: number | string | null;
-    Cita: string;
-    Fecha: Date;
-    Booking: string;
-    OrderGkey: number | null;
-    VesselVisitGkey: number | null;
-    Linea: string;
-    Cliente: string;
-    Contenedor: string;
-    Tecnologia: string;
-    Producto: string;
-    Nave: string;
-    Placa: string;
-    Carreta: string;
+    Cita?: string;
+    codigo?: string;
+    Fecha?: Date | null;
+    Booking?: string;
+    BlItemGkey?: number | string | null;
+    OrderGkey?: number | null;
+    VesselVisitGkey?: number | null;
+    GateGkey?: number | null;
+    Linea?: string;
+    Cliente?: string;
+    Contenedor?: string;
+    Tecnologia?: string;
+    Producto?: string;
+    Nave?: string;
+    Placa?: string;
+    Carreta?: string;
+    Tracto?: string;
+    Chassis?: string;
     Stage: string;
     Tranquera?: Date | null;
     PreGate?: Date | null;
     GateIn?: Date | null;
+    ZonaEspera?: Date | null;
+    InicioCarguio?: Date | null;
     Yard?: Date | null;
-    Tipo: string;
-    PuertoDescarga: string;
+    GateOut?: Date | null;
+    Tipo?: string;
+    TipoOperativa?: string;
+    PuertoDescarga?: string;
 }
 
 export interface AppointmentStageResult {
@@ -107,7 +123,10 @@ export interface AppointmentStageResult {
     Tranquera: Date | null;
     PreGate: Date | null;
     GateIn: Date | null;
+    ZonaEspera?: Date | null;
+    InicioCarguio?: Date | null;
     Yard: Date | null;
+    GateOut?: Date | null;
 }
 
 export interface PendingAppointmentResult {

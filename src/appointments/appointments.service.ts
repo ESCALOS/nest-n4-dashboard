@@ -21,7 +21,10 @@ type AppointmentStageTimestamps = {
   Tranquera: Date | null;
   PreGate: Date | null;
   GateIn: Date | null;
+  ZonaEspera: Date | null;
+  InicioCarguio: Date | null;
   Yard: Date | null;
+  GateOut: Date | null;
 };
 
 type AppointmentStageCachePayload = {
@@ -99,6 +102,62 @@ export class AppointmentsService {
     await this.redisService.setJson(cacheKey, response);
 
     this.logger.debug(`Cached ${appointments.length} appointments in progress`);
+
+    return response;
+  }
+
+  async getGeneralCargoAppointmentsInProgress(): Promise<AppointmentsResponseDto> {
+    const cacheKey = CACHE_KEYS.generalCargoAppointmentsInProgress;
+
+    const cached =
+      await this.redisService.getJson<AppointmentsResponseDto>(cacheKey);
+
+    if (cached) {
+      return cached;
+    }
+
+    return this.fetchAndCacheGeneralCargoAppointments();
+  }
+
+  async fetchAndCacheGeneralCargoAppointments(): Promise<AppointmentsResponseDto> {
+    const results = await this.n4Service.getGeneralCargoAppointmentsInProgress();
+    const [
+      vesselNamesByCarrierVisit,
+      blItemInfoByGkey,
+      stageTimestampsByTranGkey,
+    ] = await Promise.all([
+      this.resolveVesselNamesByCarrierVisit(results),
+      this.resolveBlItemInfoByBlItemGkey(results),
+      this.resolveStageTimestamps(results),
+    ]);
+
+    const appointments: AppointmentInProgressDto[] = results
+      .map((r) =>
+        this.mapGeneralCargoAppointment(
+          r,
+          vesselNamesByCarrierVisit,
+          blItemInfoByGkey,
+          stageTimestampsByTranGkey,
+        ),
+      )
+      .sort((a, b) => {
+        const dateA = a.fechaStage ? new Date(a.fechaStage).getTime() : 0;
+        const dateB = b.fechaStage ? new Date(b.fechaStage).getTime() : 0;
+        return dateB - dateA;
+      });
+
+    const response: AppointmentsResponseDto = {
+      data: appointments,
+      count: appointments.length,
+      timestamp: new Date(),
+    };
+
+    await this.redisService.setJson(
+      CACHE_KEYS.generalCargoAppointmentsInProgress,
+      response,
+    );
+
+    this.logger.debug(`Cached ${appointments.length} general cargo appointments in progress`);
 
     return response;
   }
@@ -202,7 +261,7 @@ export class AppointmentsService {
    * Cache key: appointments:vessel-by-carrier-visit:{carrierVisitGkey}
    */
   private async resolveVesselNamesByCarrierVisit(
-    results: Array<{ VesselVisitGkey: number | string | null }>,
+    results: Array<{ VesselVisitGkey?: number | string | null }>,
   ): Promise<Map<number, string>> {
     const mapping = new Map<number, string>();
 
@@ -266,7 +325,7 @@ export class AppointmentsService {
    * TTL: 3 days
    */
   private async resolveOrderInfoByOrderGkey(
-    results: Array<{ OrderGkey: number | string | null }>,
+    results: Array<{ OrderGkey?: number | string | null }>,
   ): Promise<Map<number, { booking: string; producto: string }>> {
     const mapping = new Map<number, { booking: string; producto: string }>();
 
@@ -329,6 +388,75 @@ export class AppointmentsService {
   }
 
   /**
+   * Resolve permiso/producto metadata for in-progress general cargo appointments.
+   * Cache key: appointments:blitem-info:{blItemGkey}
+   * TTL: 3 days
+   */
+  private async resolveBlItemInfoByBlItemGkey(
+    results: Array<{ BlItemGkey?: number | string | null }>,
+  ): Promise<Map<number, { permiso: string; producto: string; cliente: string }>> {
+    const mapping = new Map<number, { permiso: string; producto: string; cliente: string }>();
+
+    const blItemGkeys = Array.from(
+      new Set(
+        results
+          .map((r) => this.normalizeGkey(r.BlItemGkey))
+          .filter((v): v is number => v !== null),
+      ),
+    );
+
+    if (blItemGkeys.length === 0) return mapping;
+
+    const cachePairs = await Promise.all(
+      blItemGkeys.map(async (gkey) => {
+        const cached = await this.redisService.getJson<{
+          permiso: string;
+          producto: string;
+          cliente: string;
+        }>(CACHE_KEYS.appointmentBlItemInfo(gkey));
+        return [gkey, cached] as const;
+      }),
+    );
+
+    const missingGkeys: number[] = [];
+
+    for (const [gkey, cached] of cachePairs) {
+      if (cached) {
+        mapping.set(gkey, cached);
+      } else {
+        missingGkeys.push(gkey);
+      }
+    }
+
+    if (missingGkeys.length > 0) {
+      const fetched = await this.n4Service.getBlItemInfoByBlItemGkeys(missingGkeys);
+      const writePromises: Promise<void>[] = [];
+
+      for (const blItem of fetched) {
+        const payload = {
+          permiso: blItem.permiso ?? 'N.E.',
+          producto: blItem.commodity ?? 'N.E.',
+          cliente: blItem.cliente ?? 'N.E.',
+        };
+
+        mapping.set(blItem.bl_item_gkey, payload);
+
+        writePromises.push(
+          this.redisService.setJson(
+            CACHE_KEYS.appointmentBlItemInfo(blItem.bl_item_gkey),
+            payload,
+            CACHE_TTL.appointmentBlItemInfo,
+          ),
+        );
+      }
+
+      await Promise.all(writePromises);
+    }
+
+    return mapping;
+  }
+
+  /**
    * Resolve immutable stage timestamps by tran_gkey using Redis cache.
    * Cache key: appointments:stages:{tranGkey}
    * Re-fetches only when stage changes or cache miss occurs.
@@ -377,7 +505,10 @@ export class AppointmentsService {
           Tranquera: this.normalizeDate(cached.Tranquera),
           PreGate: this.normalizeDate(cached.PreGate),
           GateIn: this.normalizeDate(cached.GateIn),
+          ZonaEspera: this.normalizeDate(cached.ZonaEspera),
+          InicioCarguio: this.normalizeDate(cached.InicioCarguio),
           Yard: this.normalizeDate(cached.Yard),
+          GateOut: this.normalizeDate(cached.GateOut),
         };
 
         if (!this.shouldRefetchStageTimestamps(currentStage, cachedTimestamps)) {
@@ -431,9 +562,37 @@ export class AppointmentsService {
           row.GateIn ??
           null,
         ),
+        ZonaEspera: this.normalizeDate(
+          this.getStageField(
+            fetched,
+            'ZonaEspera',
+            'zonaespera',
+            'zona_de_espera',
+            'zona-espera',
+          ) ??
+          row.ZonaEspera ??
+          null,
+        ),
+        InicioCarguio: this.normalizeDate(
+          this.getStageField(
+            fetched,
+            'InicioCarguio',
+            'iniciocarguio',
+            'inicio_de_carguio',
+            'inicio-carguio',
+            'inicio_carguio',
+          ) ??
+          row.InicioCarguio ??
+          null,
+        ),
         Yard: this.normalizeDate(
           this.getStageField(fetched, 'Yard', 'yard') ??
           row.Yard ??
+          null,
+        ),
+        GateOut: this.normalizeDate(
+          this.getStageField(fetched, 'GateOut', 'gateout', 'gate_out') ??
+          row.GateOut ??
           null,
         ),
       };
@@ -497,12 +656,14 @@ export class AppointmentsService {
         Tranquera: this.normalizeDate(r.Tranquera ?? null),
         PreGate: this.normalizeDate(r.PreGate ?? null),
         GateIn: this.normalizeDate(r.GateIn ?? null),
+        ZonaEspera: this.normalizeDate(r.ZonaEspera ?? null),
+        InicioCarguio: this.normalizeDate(r.InicioCarguio ?? null),
         Yard: this.normalizeDate(r.Yard ?? null),
+        GateOut: this.normalizeDate(r.GateOut ?? null),
       };
 
     const normalizedStage = this.normalizeStage(r.Stage);
     const stageDate = this.getStageDateForCurrentStage(normalizedStage, stageTimestamps);
-    const now = new Date();
     const vesselVisitGkey = this.normalizeGkey(r.VesselVisitGkey);
     const orderGkey = this.normalizeGkey(r.OrderGkey);
 
@@ -516,33 +677,140 @@ export class AppointmentsService {
         ? orderInfoByOrderGkey.get(orderGkey)!
         : { booking: r.Booking ?? 'N.E.', producto: r.Producto ?? 'N.E.' };
 
-
     const tiempoMin = stageDate
       ? normalizedStage === 'tranquera'
-        ? Math.floor((now.getTime() - new Date(stageDate).getTime()) / 60000)
-        : stageTimestamps.PreGate
-          ? Math.floor((now.getTime() - new Date(stageTimestamps.PreGate).getTime()) / 60000)
-          : null
+        ? this.elapsedMinutesSince(stageDate)
+        : this.elapsedMinutesSince(stageTimestamps.PreGate)
       : null;
 
     return {
-      cita: r.Cita,
-      fechaCita: r.Fecha,
+      cita: r.Cita ?? this.normalizeBigintKey(r.TranGkey) ?? 'N.E.',
+      fechaCita: r.Fecha ?? null,
       fechaStage: stageDate,
       fechaPreGate: stageTimestamps.PreGate,
       fechaGateIn: stageTimestamps.GateIn,
+      fechaZonaEspera: stageTimestamps.ZonaEspera,
+      fechaInicioCarguio: stageTimestamps.InicioCarguio,
+      fechaYard: stageTimestamps.Yard,
+      fechaGateOut: stageTimestamps.GateOut,
       stage: normalizedStage,
       tiempo: tiempoMin,
-      linea: r.Linea,
+      tiempoGateIn: this.elapsedMinutesSince(stageTimestamps.GateIn),
+      deducibleEsperaInicioCarguio: 0,
+      deducibleInicioCarguioTermino: 0,
+      tiempoEfectivo: tiempoMin,
+      linea: r.Linea ?? 'N.E.',
       booking: orderInfo.booking,
-      placa: r.Placa,
-      cliente: r.Cliente,
-      tecnologia: r.Tecnologia,
+      permiso: 'N.E.',
+      placa: r.Placa ?? '',
+      tracto: r.Tracto ?? r.Placa ?? '',
+      cliente: r.Cliente ?? 'N.E.',
+      tecnologia: r.Tecnologia ?? 'N.E.',
       producto: orderInfo.producto,
-      contenedor: r.Contenedor,
+      contenedor: r.Contenedor ?? 'N.E.',
       nave: vesselName,
-      carreta: r.Carreta,
-      tipo: r.Tipo,
+      carreta: r.Carreta ?? '',
+      chassis: r.Chassis ?? r.Carreta ?? '',
+      tipo: r.Tipo ?? 'N.E.',
+      tipoOperativa: r.Tipo ?? 'N.E.',
+      puertoDescarga: r.PuertoDescarga ?? null,
+    };
+  }
+
+  private mapGeneralCargoAppointment(
+    r: AppointmentResult,
+    vesselNamesByCarrierVisit: Map<number, string>,
+    blItemInfoByGkey: Map<number, { permiso: string; producto: string; cliente: string }>,
+    stageTimestampsByTranGkey: Map<string, AppointmentStageTimestamps>,
+  ): AppointmentInProgressDto {
+    const tranGkey = this.normalizeBigintKey(r.TranGkey);
+    const cachedStageTimestamps =
+      tranGkey !== null ? stageTimestampsByTranGkey.get(tranGkey) : undefined;
+
+    const stageTimestamps: AppointmentStageTimestamps =
+      cachedStageTimestamps ?? {
+        Tranquera: this.normalizeDate(r.Tranquera ?? null),
+        PreGate: this.normalizeDate(r.PreGate ?? null),
+        GateIn: this.normalizeDate(r.GateIn ?? null),
+        ZonaEspera: this.normalizeDate(r.ZonaEspera ?? null),
+        InicioCarguio: this.normalizeDate(r.InicioCarguio ?? null),
+        Yard: this.normalizeDate(r.Yard ?? null),
+        GateOut: this.normalizeDate(r.GateOut ?? null),
+      };
+
+    const normalizedStage = this.normalizeStage(r.Stage);
+    const stageDate = this.getStageDateForCurrentStage(normalizedStage, stageTimestamps);
+    const vesselVisitGkey = this.normalizeGkey(r.VesselVisitGkey);
+    const blItemGkey = this.normalizeGkey(r.BlItemGkey);
+
+    const vesselName =
+      vesselVisitGkey && vesselNamesByCarrierVisit.has(vesselVisitGkey)
+        ? vesselNamesByCarrierVisit.get(vesselVisitGkey)!
+        : r.Nave ?? 'N.E.';
+
+    const blItemInfo =
+      blItemGkey && blItemInfoByGkey.has(blItemGkey)
+        ? blItemInfoByGkey.get(blItemGkey)!
+        : { permiso: 'N.E.', producto: r.Producto ?? 'N.E.', cliente: r.Cliente ?? 'N.E.' };
+
+    const tiempoGateIn = this.elapsedMinutesSince(stageTimestamps.GateIn);
+
+    // Calcular deducibles con soporte a tiempo dinámico en stages activos
+    const deducibleEsperaInicioCarguio = this.calculateDeductible(
+      stageTimestamps.ZonaEspera,
+      stageTimestamps.InicioCarguio,
+      normalizedStage === 'zona_de_espera', // Si estamos en zona de espera y no hay InicioCarguio, usar ahora
+    );
+
+    const deducibleInicioCarguioTermino = this.calculateDeductible(
+      stageTimestamps.InicioCarguio,
+      stageTimestamps.Yard,
+      normalizedStage === 'inicio_de_carguio' || normalizedStage === 'inicio_carguio', // Si estamos en inicio carguio y no hay Yard, usar ahora
+    );
+
+    const tiempoEfectivo =
+      tiempoGateIn === null
+        ? null
+        : Math.max(
+          tiempoGateIn - deducibleEsperaInicioCarguio - deducibleInicioCarguioTermino,
+          0,
+        );
+
+    return {
+      codigo: r.codigo ?? this.normalizeBigintKey(r.TranGkey) ?? 'N.E.',
+      cita:
+        r.Cita ??
+        r.codigo ??
+        this.normalizeBigintKey(r.TranGkey) ??
+        'N.E.',
+      fechaCita: r.Fecha ?? null,
+      fechaStage: stageDate,
+      fechaPreGate: stageTimestamps.PreGate,
+      fechaGateIn: stageTimestamps.GateIn,
+      fechaZonaEspera: stageTimestamps.ZonaEspera,
+      fechaInicioCarguio: stageTimestamps.InicioCarguio,
+      fechaYard: stageTimestamps.Yard,
+      fechaGateOut: stageTimestamps.GateOut,
+      stage: normalizedStage,
+      tiempo: tiempoEfectivo,
+      tiempoGateIn,
+      deducibleEsperaInicioCarguio,
+      deducibleInicioCarguioTermino,
+      tiempoEfectivo,
+      linea: r.Linea ?? 'N.E.',
+      booking: blItemInfo.permiso,
+      permiso: blItemInfo.permiso,
+      placa: r.Placa ?? '',
+      tracto: r.Tracto ?? r.Placa ?? '',
+      cliente: blItemInfo.cliente,
+      tecnologia: r.Tecnologia ?? 'N.E.',
+      producto: blItemInfo.producto,
+      contenedor: r.Contenedor ?? 'N.E.',
+      nave: vesselName,
+      carreta: r.Carreta ?? '',
+      chassis: r.Chassis ?? r.Carreta ?? '',
+      tipo: r.TipoOperativa ?? r.Tipo ?? 'N.E.',
+      tipoOperativa: r.TipoOperativa ?? r.Tipo ?? 'N.E.',
       puertoDescarga: r.PuertoDescarga ?? null,
     };
   }
@@ -559,8 +827,15 @@ export class AppointmentsService {
       case 'gate_in':
       case 'ingate':
         return timestamps.GateIn === null;
+      case 'zona_de_espera':
+        return timestamps.ZonaEspera === null;
+      case 'inicio_de_carguio':
+      case 'inicio_carguio':
+        return timestamps.InicioCarguio === null;
       case 'yard':
         return timestamps.Yard === null;
+      case 'gate_out':
+        return timestamps.GateOut === null;
       default:
         return false;
     }
@@ -583,12 +858,22 @@ export class AppointmentsService {
       case 'gate_in':
       case 'ingate':
         return timestamps.GateIn;
+      case 'zona_de_espera':
+        return timestamps.ZonaEspera;
+      case 'inicio_de_carguio':
+      case 'inicio_carguio':
+        return timestamps.InicioCarguio;
       case 'yard':
         return timestamps.Yard;
+      case 'gate_out':
+        return timestamps.GateOut;
       default:
         // Fallback: la fecha más reciente disponible
         return (
+          timestamps.GateOut ??
           timestamps.Yard ??
+          timestamps.InicioCarguio ??
+          timestamps.ZonaEspera ??
           timestamps.GateIn ??
           timestamps.PreGate ??
           timestamps.Tranquera ??
@@ -601,7 +886,46 @@ export class AppointmentsService {
     if (!stage) return '';
     if (stage === 'pre-gate') return 'pre_gate';
     if (stage === 'ingate') return 'gate_in';
+    if (stage === 'zona-espera' || stage === 'zona espera') return 'zona_de_espera';
+    if (stage === 'inicio-carguio') return 'inicio_de_carguio';
     return stage;
+  }
+
+  private elapsedMinutesSince(start: Date | null): number | null {
+    if (!start) return null;
+    const diff = Date.now() - start.getTime();
+    if (diff < 0) return null;
+    return Math.floor(diff / 60000);
+  }
+
+  private minutesBetween(start: Date | null, end: Date | null): number {
+    if (!start || !end) return 0;
+    const diff = end.getTime() - start.getTime();
+    if (diff <= 0) return 0;
+    return Math.floor(diff / 60000);
+  }
+
+  /**
+   * Calcula deducible entre dos fechas.
+   * Si isActiveStage es true y end es null, usa la fecha actual como referencia.
+   * Útil para calcular tiempo acumulado en stages activos (zona de espera, inicio carguio).
+   */
+  private calculateDeductible(
+    start: Date | null,
+    end: Date | null,
+    isActiveStage: boolean,
+  ): number {
+    if (!start) return 0;
+
+    // Si estamos en un stage activo y no existe la fecha final, usar ahora
+    if (isActiveStage && !end) {
+      const diff = Date.now() - start.getTime();
+      if (diff <= 0) return 0;
+      return Math.floor(diff / 60000);
+    }
+
+    // Caso normal: calcular entre dos fechas existentes
+    return this.minutesBetween(start, end);
   }
 
   private normalizeDate(value: unknown): Date | null {

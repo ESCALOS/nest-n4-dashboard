@@ -37,6 +37,31 @@ export class CacheController {
   }
 
   /**
+   * Reset BL item metadata cache for appointments (general cargo) by BL item gkey
+   */
+  @Post('appointments/bl-item/:blItemGkey/reset')
+  async resetAppointmentBlItemInfo(
+    @Param('blItemGkey', ParseIntPipe) blItemGkey: number,
+  ): Promise<{ message: string }> {
+    await this.cacheService.resetAppointmentBlItemInfo(blItemGkey);
+    return {
+      message: `Appointment BL item cache reset for blItemGkey ${blItemGkey}`,
+    };
+  }
+
+  /**
+   * Reset all BL item metadata cache for appointments (general cargo)
+   */
+  @Post('appointments/bl-items/reset')
+  async resetAllAppointmentBlItems(): Promise<{ message: string; deleted: number }> {
+    const deleted = await this.cacheService.resetAllAppointmentBlItemInfo();
+    return {
+      message: 'All appointment BL item cache keys reset',
+      deleted,
+    };
+  }
+
+  /**
    * Reset manifest cache
    */
   @Post('manifest/:manifestId/reset')

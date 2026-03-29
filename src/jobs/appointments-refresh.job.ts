@@ -32,6 +32,7 @@ export class AppointmentsRefreshJob {
       // Refresh both in-progress and pending in parallel
       await Promise.all([
         this.appointmentsService.fetchAndCacheAppointments(),
+        this.appointmentsService.fetchAndCacheGeneralCargoAppointments(),
         this.appointmentsService.fetchAndCachePendingAppointments(),
       ]);
 
