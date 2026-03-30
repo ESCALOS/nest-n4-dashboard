@@ -2,6 +2,7 @@ import { OperationType } from '../enums/operation-type.enum';
 import { Manifest } from '../interfaces/manifest.interface';
 import { Summary } from '../interfaces/summary.interface';
 import { Transaction } from '../interfaces/transaction.interface';
+import { CompletionAlertDto } from './completion-alert.dto';
 import { HoldAlertDto } from './hold-alert.dto';
 
 export interface VesselData {
@@ -15,6 +16,7 @@ export interface VesselData {
     shifts_worked: string[];
     transactions: Transaction[];
     hold_alerts: HoldAlertDto[];
+    completion_alerts: CompletionAlertDto[];
 }
 
 export interface MonitoringGeneralCargoResponse {

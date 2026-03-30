@@ -7,6 +7,7 @@ import { OperationVesselItemDto } from './dto/OperationVesselItem.dto';
 import { IS_BL_ITEM_AS, OperationType, IS_GATE_TRANSACTION } from './enums/operation-type.enum';
 import { TransactionDto } from './dto/transaction.dto';
 import { HoldAlertDto } from './dto/hold-alert.dto';
+import { CompletionAlertDto } from './dto/completion-alert.dto';
 import { TransactionResult } from 'src/database/n4/n4.interfaces';
 import { Manifest } from './interfaces/manifest.interface';
 import { Summary } from './interfaces/summary.interface';
@@ -21,6 +22,7 @@ import { IndirectShipmentTicketDto } from './dto/indirect-shipment-ticket.dto';
 @Injectable()
 export class GeneralCargoService {
   private readonly logger = new Logger(GeneralCargoService.name);
+  private static readonly COMPLETION_ALERT_THRESHOLD_TRUCKS = 10;
 
   constructor(
     private readonly n4Service: N4Service,
@@ -477,6 +479,8 @@ export class GeneralCargoService {
     // Build hold summaries
     const holdSummaries = this.buildHoldSummaries(holds, rawTransactions);
 
+    const completionAlerts = this.buildCompletionAlerts(holds, rawTransactions);
+
     // Build service (BL item) summaries
     const serviceSummaries = this.buildServiceSummaries(
       blItems,
@@ -507,6 +511,7 @@ export class GeneralCargoService {
       shifts_worked: shiftsWorked,
       transactions,
       hold_alerts: holdAlerts,
+      completion_alerts: completionAlerts,
     };
 
     return {
@@ -538,13 +543,14 @@ export class GeneralCargoService {
       );
 
       // Group by shift
-      const shifts: Record<string, { weight: number; goods: number }> = {};
+      const shifts: Record<string, { weight: number; goods: number; tickets: number }> = {};
       for (const t of holdTransactions) {
         if (!shifts[t.shift]) {
-          shifts[t.shift] = { weight: 0, goods: 0 };
+          shifts[t.shift] = { weight: 0, goods: 0, tickets: 0 };
         }
         shifts[t.shift].weight += t.total_weight;
         shifts[t.shift].goods += t.total_goods;
+        shifts[t.shift].tickets += t.total_tickets;
       }
 
       return {
@@ -582,13 +588,14 @@ export class GeneralCargoService {
       );
 
       // Group by shift
-      const shifts: Record<string, { weight: number; goods: number }> = {};
+      const shifts: Record<string, { weight: number; goods: number; tickets: number }> = {};
       for (const t of itemTransactions) {
         if (!shifts[t.shift]) {
-          shifts[t.shift] = { weight: 0, goods: 0 };
+          shifts[t.shift] = { weight: 0, goods: 0, tickets: 0 };
         }
         shifts[t.shift].weight += t.total_weight;
         shifts[t.shift].goods += t.total_goods;
+        shifts[t.shift].tickets += t.total_tickets;
       }
 
       return {
@@ -614,5 +621,71 @@ export class GeneralCargoService {
       shifts.add(t.shift);
     }
     return Array.from(shifts).sort();
+  }
+
+  private buildCompletionAlerts(
+    holds: OperationVesselItemDto[],
+    transactions: TransactionDto[],
+  ): CompletionAlertDto[] {
+    return holds
+      .map((hold) => {
+        const holdTransactions = transactions.filter((transaction) => transaction.hold === hold.nbr);
+
+        const processedWeight = holdTransactions.reduce(
+          (sum, transaction) => sum + transaction.total_weight,
+          0,
+        );
+        const processedGoods = holdTransactions.reduce(
+          (sum, transaction) => sum + transaction.total_goods,
+          0,
+        );
+        const processedTickets = holdTransactions.reduce(
+          (sum, transaction) => sum + transaction.total_tickets,
+          0,
+        );
+
+        if (processedTickets <= 0) {
+          return null;
+        }
+
+        const remainingWeight = Math.max(hold.manifested_weight - processedWeight, 0);
+        if (remainingWeight <= 0) {
+          return null;
+        }
+
+        const averageWeightPerTruck = processedWeight / processedTickets;
+        const averageGoodsPerTruck = processedGoods / processedTickets;
+
+        const estimatedRemainingTrucksByWeight = averageWeightPerTruck > 0
+          ? Math.ceil(remainingWeight / averageWeightPerTruck)
+          : Number.POSITIVE_INFINITY;
+
+        const remainingGoods = Math.max(hold.manifested_goods - processedGoods, 0);
+        const estimatedRemainingTrucksByGoods = averageGoodsPerTruck > 0
+          ? Math.ceil(remainingGoods / averageGoodsPerTruck)
+          : Number.POSITIVE_INFINITY;
+
+        const estimatedRemainingTrucks = Number.isFinite(estimatedRemainingTrucksByWeight)
+          ? estimatedRemainingTrucksByWeight
+          : estimatedRemainingTrucksByGoods;
+
+        if (
+          !Number.isFinite(estimatedRemainingTrucks)
+          || estimatedRemainingTrucks <= 0
+          || estimatedRemainingTrucks > GeneralCargoService.COMPLETION_ALERT_THRESHOLD_TRUCKS
+        ) {
+          return null;
+        }
+
+        return {
+          hold: hold.nbr,
+          estimatedRemainingTrucks,
+          remainingWeight,
+          averageWeightPerTruck: Number.isFinite(averageWeightPerTruck) ? averageWeightPerTruck : 0,
+          totalTicketsProcessed: processedTickets,
+        } satisfies CompletionAlertDto;
+      })
+      .filter((alert): alert is CompletionAlertDto => alert !== null)
+      .sort((left, right) => left.estimatedRemainingTrucks - right.estimatedRemainingTrucks);
   }
 }

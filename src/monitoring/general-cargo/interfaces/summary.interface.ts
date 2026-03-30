@@ -14,6 +14,7 @@ export interface Summary {
         [key: string]: {
             weight: number;
             goods: number;
+            tickets: number;
         };
     }
 }
