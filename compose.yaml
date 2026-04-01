@@ -1,5 +1,18 @@
 services:
-  postgresal:
+  nest-app:
+    build: .
+    container_name: nest-app
+    env_file:
+      - .env
+    ports:
+      - "3000:3000"
+    restart: always
+    depends_on:
+      postgresql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+  postgresql:
     image: postgres:17
     env_file:
       - .env
