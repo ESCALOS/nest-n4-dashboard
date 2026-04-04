@@ -8,6 +8,8 @@ RUN npm install -g pnpm
 RUN pnpm install
 
 COPY . .
+
+RUN pnpm prisma generate
 RUN pnpm build
 
 # Production stage
