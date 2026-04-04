@@ -299,14 +299,17 @@ export class GeneralCargoService {
   async getStockpilingTickets(blItemGkeys: number[], manifestId: string): Promise<StockpilingTicketDto[]> {
     if (blItemGkeys.length === 0) return [];
 
-    const [rawTickets, blItems] = await Promise.all([
+    const [rawTickets, stockpilingBlItems, dispatchingBlItems] = await Promise.all([
       this.n4Service.getStockpilingTickets(blItemGkeys),
       this.getBLItems(manifestId, OperationType.STOCKPILING),
+      this.getBLItems(manifestId, OperationType.DISPATCHING),
     ]);
 
-    const blItemMap = new Map(blItems.map(item => [item.gkey, item.nbr]));
+    const blItemMap = new Map(
+      [...stockpilingBlItems, ...dispatchingBlItems].map((item) => [item.gkey, item.nbr]),
+    );
 
-    return rawTickets.map(ticket => ({
+    return rawTickets.map((ticket) => ({
       ...ticket,
       blItemNbr: blItemMap.get(ticket.blItemGkey) ?? String(ticket.blItemGkey),
     }));
