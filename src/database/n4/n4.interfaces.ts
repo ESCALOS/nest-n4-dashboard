@@ -22,6 +22,8 @@ export interface VesselByCarrierVisitResult {
     carrier_visit_gkey: number;
     manifest_id: string;
     vessel_name: string;
+    line_id: string | null;
+    line_name: string | null;
 }
 
 export interface OrderInfoResult {
@@ -95,7 +97,6 @@ export interface AppointmentResult {
     OrderGkey?: number | null;
     VesselVisitGkey?: number | null;
     GateGkey?: number | null;
-    Linea?: string;
     Cliente?: string;
     Contenedor?: string;
     Tecnologia?: string;
@@ -132,7 +133,6 @@ export interface AppointmentStageResult {
 export interface PendingAppointmentResult {
     Cita: string;
     Fecha: Date;
-    Linea: string;
     OrderGkey: number | null;
     Placa: string;
     Carreta: string;

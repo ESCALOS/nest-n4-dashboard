@@ -223,16 +223,17 @@ export class AppointmentsService {
    */
   private mapPendingAppointment(
     r: PendingAppointmentResult,
-    vesselNamesByCarrierVisit: Map<number, string>,
+    vesselNamesByCarrierVisit: Map<number, { label: string; lineId: string | null }>,
     orderInfoByOrderGkey: Map<number, { booking: string; producto: string }>,
   ): PendingAppointmentDto {
     const vesselVisitGkey = this.normalizeGkey(r.VesselVisitGkey);
     const orderGkey = this.normalizeGkey(r.OrderGkey);
 
-    const vesselName =
+    const vesselInfo =
       vesselVisitGkey && vesselNamesByCarrierVisit.has(vesselVisitGkey)
         ? vesselNamesByCarrierVisit.get(vesselVisitGkey)!
-        : 'N.E.';
+        : null;
+    const vesselName = vesselInfo?.label ?? 'N.E.';
 
     const orderInfo =
       orderGkey && orderInfoByOrderGkey.has(orderGkey)
@@ -242,7 +243,7 @@ export class AppointmentsService {
     return {
       cita: r.Cita,
       fechaCita: r.Fecha,
-      linea: r.Linea,
+      linea: vesselInfo?.lineId ?? 'N.E.',
       booking: orderInfo.booking,
       placa: r.Placa,
       carreta: r.Carreta,
@@ -262,8 +263,8 @@ export class AppointmentsService {
    */
   private async resolveVesselNamesByCarrierVisit(
     results: Array<{ VesselVisitGkey?: number | string | null }>,
-  ): Promise<Map<number, string>> {
-    const mapping = new Map<number, string>();
+  ): Promise<Map<number, { label: string; lineId: string | null }>> {
+    const mapping = new Map<number, { label: string; lineId: string | null }>();
 
     const carrierVisitGkeys = Array.from(
       new Set(
@@ -277,7 +278,7 @@ export class AppointmentsService {
 
     const cachePairs = await Promise.all(
       carrierVisitGkeys.map(async (gkey) => {
-        const cached = await this.redisService.get(
+        const cached = await this.redisService.getJson<{ label: string; lineId: string | null }>(
           CACHE_KEYS.appointmentVesselByCarrierVisit(gkey),
         );
         return [gkey, cached] as const;
@@ -303,12 +304,14 @@ export class AppointmentsService {
 
       for (const vessel of fetched) {
         const label = `${vessel.manifest_id} - ${vessel.vessel_name}`;
-        mapping.set(vessel.carrier_visit_gkey, label);
+        const lineId = vessel.line_id ?? null;
+        const vesselInfo = { label, lineId };
+        mapping.set(vessel.carrier_visit_gkey, vesselInfo);
 
         writePromises.push(
-          this.redisService.set(
+          this.redisService.setJson(
             CACHE_KEYS.appointmentVesselByCarrierVisit(vessel.carrier_visit_gkey),
-            label,
+            vesselInfo,
           ),
         );
       }
@@ -643,7 +646,7 @@ export class AppointmentsService {
    */
   private mapAppointment(
     r: AppointmentResult,
-    vesselNamesByCarrierVisit: Map<number, string>,
+    vesselNamesByCarrierVisit: Map<number, { label: string; lineId: string | null }>,
     orderInfoByOrderGkey: Map<number, { booking: string; producto: string }>,
     stageTimestampsByTranGkey: Map<string, AppointmentStageTimestamps>,
   ): AppointmentInProgressDto {
@@ -667,10 +670,11 @@ export class AppointmentsService {
     const vesselVisitGkey = this.normalizeGkey(r.VesselVisitGkey);
     const orderGkey = this.normalizeGkey(r.OrderGkey);
 
-    const vesselName =
+    const vesselInfo =
       vesselVisitGkey && vesselNamesByCarrierVisit.has(vesselVisitGkey)
         ? vesselNamesByCarrierVisit.get(vesselVisitGkey)!
-        : r.Nave ?? 'N.E.';
+        : null;
+    const vesselName = vesselInfo?.label ?? r.Nave ?? 'N.E.';
 
     const orderInfo =
       orderGkey && orderInfoByOrderGkey.has(orderGkey)
@@ -699,7 +703,7 @@ export class AppointmentsService {
       deducibleEsperaInicioCarguio: 0,
       deducibleInicioCarguioTermino: 0,
       tiempoEfectivo: tiempoMin,
-      linea: r.Linea ?? 'N.E.',
+      linea: vesselInfo?.lineId ?? 'N.E.',
       booking: orderInfo.booking,
       permiso: 'N.E.',
       placa: r.Placa ?? '',
@@ -719,7 +723,7 @@ export class AppointmentsService {
 
   private mapGeneralCargoAppointment(
     r: AppointmentResult,
-    vesselNamesByCarrierVisit: Map<number, string>,
+    vesselNamesByCarrierVisit: Map<number, { label: string; lineId: string | null }>,
     blItemInfoByGkey: Map<number, { permiso: string; producto: string; cliente: string }>,
     stageTimestampsByTranGkey: Map<string, AppointmentStageTimestamps>,
   ): AppointmentInProgressDto {
@@ -743,10 +747,11 @@ export class AppointmentsService {
     const vesselVisitGkey = this.normalizeGkey(r.VesselVisitGkey);
     const blItemGkey = this.normalizeGkey(r.BlItemGkey);
 
-    const vesselName =
+    const vesselInfo =
       vesselVisitGkey && vesselNamesByCarrierVisit.has(vesselVisitGkey)
         ? vesselNamesByCarrierVisit.get(vesselVisitGkey)!
-        : r.Nave ?? 'N.E.';
+        : null;
+    const vesselName = vesselInfo?.label ?? r.Nave ?? 'N.E.';
 
     const blItemInfo =
       blItemGkey && blItemInfoByGkey.has(blItemGkey)
@@ -797,7 +802,7 @@ export class AppointmentsService {
       deducibleEsperaInicioCarguio,
       deducibleInicioCarguioTermino,
       tiempoEfectivo,
-      linea: r.Linea ?? 'N.E.',
+      linea: vesselInfo?.lineId ?? 'N.E.',
       booking: blItemInfo.permiso,
       permiso: blItemInfo.permiso,
       placa: r.Placa ?? '',

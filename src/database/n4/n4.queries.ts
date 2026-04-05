@@ -41,17 +41,20 @@ export const N4Queries = {
 
     /**
      * Get vessel mapping by carrier visit gkeys (batch)
-     * Returns: carrier_visit_gkey, manifest_id, vessel_name
+     * Returns: carrier_visit_gkey, manifest_id, vessel_name, line_id, line_name
      */
     getVesselsByCarrierVisitGkeys: `
         SELECT
                 acv.gkey AS carrier_visit_gkey,
                 acv.id AS manifest_id,
-                vv.name AS vessel_name
+                vv.name AS vessel_name,
+                line.id AS line_id,
+                line.name AS line_name
         FROM argo_carrier_visit acv
         INNER JOIN argo_visit_details del ON del.gkey = acv.cvcvd_gkey
         INNER JOIN vsl_vessel_visit_details vis ON vis.vvd_gkey = del.gkey
         INNER JOIN vsl_vessels vv ON vv.gkey = vis.vessel_gkey
+        INNER JOIN ref_bizunit_scoped line ON acv.operator_gkey = line.gkey
         WHERE acv.gkey IN (
                 SELECT TRY_CONVERT(BIGINT, value)
                 FROM STRING_SPLIT(@carrierVisitGkeys, ',')
@@ -597,7 +600,6 @@ export const N4Queries = {
     SELECT
         appt.id AS Cita,
         DATEADD(HOUR, 5, slot.start_date) AS Fecha,
-        line.id AS Linea,
         appt.order_gkey AS OrderGkey,
         appt.truck_id AS Placa,
         appt.chassis_id AS Carreta,
@@ -620,9 +622,6 @@ export const N4Queries = {
     LEFT JOIN inv_unit unit
         ON unit.gkey = appt.unit_gkey
 
-    LEFT JOIN ref_bizunit_scoped line
-        ON line.gkey = appt.line_op_gkey
-
     LEFT JOIN ref_bizunit_scoped shipper
         ON shipper.gkey = appt.shipper_gkey
 
@@ -644,7 +643,6 @@ export const N4Queries = {
         gat.eqo_nbr AS Booking,
         appt.order_gkey AS OrderGkey,
         appt.vessel_visit_gkey AS VesselVisitGkey,
-        gat.line_id AS Linea,
         shi.name AS Cliente,
         unit.id AS Contenedor,
         gat.flex_string24 AS Tecnologia,
