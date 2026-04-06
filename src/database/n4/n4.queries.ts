@@ -274,22 +274,22 @@ export const N4Queries = {
     LEFT JOIN inv_unit_fcy_visit fcy
         ON fcy.unit_gkey = iu.gkey
     OUTER APPLY (
-        SELECT TOP 1 e.placed_time
-        FROM srv_event e
-        WHERE e.applied_to_natural_key = ciwt.CUSTOMWGTRAN_CTRNBR
-          AND e.event_type_gkey = 17
-        ORDER BY e.gkey DESC
-    ) evnt
+        SELECT TOP 1 m.t_put
+        FROM inv_move_event m
+        WHERE m.ufv_gkey = iu.active_ufv 
+          AND m.move_kind = 'LOAD'
+        ORDER BY m.mve_gkey DESC
+    ) move
     CROSS APPLY (
         SELECT
             ISNULL(UPPER(iu.flex_string12), 'SIN BODEGA') AS hold,
             CASE
-                WHEN DATEPART(HOUR, evnt.placed_time) < 8 THEN
-                    FORMAT(evnt.placed_time, 'dd-MM-yyyy') + ' 00:00 - 07:59'
-                WHEN DATEPART(HOUR, evnt.placed_time) < 16 THEN
-                    FORMAT(evnt.placed_time, 'dd-MM-yyyy') + ' 08:00 - 15:59'
+                WHEN DATEPART(HOUR, move.t_put) < 8 THEN
+                    FORMAT(move.t_put, 'dd-MM-yyyy') + ' 00:00 - 07:59'
+                WHEN DATEPART(HOUR, move.t_put) < 16 THEN
+                    FORMAT(move.t_put, 'dd-MM-yyyy') + ' 08:00 - 15:59'
                 ELSE
-                    FORMAT(evnt.placed_time, 'dd-MM-yyyy') + ' 16:00 - 23:59'
+                    FORMAT(move.t_put, 'dd-MM-yyyy') + ' 16:00 - 23:59'
             END AS shift
     ) calc
     WHERE iu.category = 'EXPRT'
@@ -428,21 +428,21 @@ export const N4Queries = {
         ISNULL(ciwt.CUSTOMWGTRAN_TRUCK_ID, '') AS tracto,
         ISNULL(ciwt.CUSTOMWGTRAN_CHASSIS_NUM, '') AS chassis,
         ISNULL(driv.name, '') AS conductor,
-        ISNULL(CONVERT(VARCHAR, evnt.placed_time, 120), '') AS fechaSalida
+        ISNULL(CONVERT(VARCHAR, m.t_put, 120), '') AS fechaSalida
     FROM CUSTOM_IND_WEIGHING_TRANS ciwt
     INNER JOIN inv_unit iu ON iu.id = ciwt.CUSTOMWGTRAN_CTRNBR
     LEFT JOIN road_truck_drivers driv ON driv.gkey = ciwt.CUSTOMWGTRAN_DRIVER
     OUTER APPLY (
-        SELECT TOP 1 e.placed_time
-        FROM srv_event e
-        WHERE e.applied_to_natural_key = ciwt.CUSTOMWGTRAN_CTRNBR
-          AND e.event_type_gkey = 17
-        ORDER BY e.gkey DESC
-    ) evnt
+        SELECT TOP 1 m.t_put
+        FROM inv_move_event m
+        WHERE m.ufv_gkey = iu.active_ufv 
+          AND m.move_kind = 'LOAD'
+        ORDER BY m.mve_gkey DESC
+    ) move
     WHERE ciwt.CUSTOMWGTRAN_BL_ITEM IN (SELECT value FROM STRING_SPLIT(@blItemGkeys, ','))
     ORDER BY
         ciwt.CUSTOMWGTRAN_BL_ITEM,
-        evnt.placed_time;
+        move.t_put;
   `,
     // ============================================
     // CONTAINER MONITORING QUERIES
