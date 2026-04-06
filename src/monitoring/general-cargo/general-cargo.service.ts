@@ -495,7 +495,7 @@ export class GeneralCargoService {
 
     return rawTickets.map((ticket) => ({
       ...ticket,
-      blItemNbr: blItemMap.get(ticket.blItemGkey) ?? String(ticket.blItemGkey),
+      blItemNbr: blItemMap.get(this.toInt(ticket.blItemGkey)) ?? String(ticket.blItemGkey),
     }));
   }
 
@@ -511,7 +511,7 @@ export class GeneralCargoService {
 
     return rawTickets.map(ticket => ({
       ...ticket,
-      blItemNbr: blItemMap.get(ticket.blItemGkey) ?? String(ticket.blItemGkey),
+      blItemNbr: blItemMap.get(this.toInt(ticket.blItemGkey)) ?? String(ticket.blItemGkey),
     }));
   }
 
