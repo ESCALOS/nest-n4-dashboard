@@ -11,6 +11,11 @@ enum Role {
   USER
 }
 
+enum SspPermissionScope {
+  INTERNAL
+  EXTERNAL
+}
+
 model User {
   id           String   @id @default(uuid())
   email        String   @unique
@@ -39,4 +44,19 @@ model RefreshToken {
   @@index([userId])
   @@index([tokenHash])
   @@map("refresh_tokens")
+}
+
+model SspPermissionClassification {
+  id            String             @id @default(uuid())
+  manifestId    String             @map("manifest_id")
+  blItemGkey    Int                @map("bl_item_gkey")
+  permissionNbr String             @map("permission_nbr")
+  scope         SspPermissionScope
+  createdAt     DateTime           @default(now()) @map("created_at")
+  updatedAt     DateTime           @updatedAt @map("updated_at")
+
+  @@unique([manifestId, blItemGkey])
+  @@index([manifestId])
+  @@index([permissionNbr])
+  @@map("ssp_permission_classifications")
 }

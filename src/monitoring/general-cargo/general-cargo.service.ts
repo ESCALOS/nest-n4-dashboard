@@ -1,5 +1,12 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
+import { SspPermissionScope } from '@prisma/client';
 import { N4Service } from 'src/database/n4/n4.service';
+import { PrismaService } from 'src/database/prisma/prisma.service';
 import { RedisService } from 'src/database/redis/redis.service';
 import { CACHE_KEYS } from 'src/common/constants/cache-keys.constant';
 import { ManifestDto } from './dto/manifest.dto';
@@ -18,6 +25,10 @@ import {
 } from './dto/operation-vessel-response.dto';
 import { StockpilingTicketDto } from './dto/stockpiling-ticket.dto';
 import { IndirectShipmentTicketDto } from './dto/indirect-shipment-ticket.dto';
+import {
+  SaveSspPermissionClassificationItemDto,
+} from './dto/save-ssp-permission-classifications.dto';
+import { SspPermissionClassificationDto } from './dto/ssp-permission-classification.dto';
 
 @Injectable()
 export class GeneralCargoService {
@@ -27,7 +38,180 @@ export class GeneralCargoService {
   constructor(
     private readonly n4Service: N4Service,
     private readonly redisService: RedisService,
+    private readonly prisma: PrismaService,
   ) { }
+
+  private isSspPermission(nbr: string): boolean {
+    return nbr.trim().toUpperCase().startsWith('SSP');
+  }
+
+  private toInt(value: number | string | null | undefined): number {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  private normalizeItems(items: OperationVesselItemDto[]): OperationVesselItemDto[] {
+    return items.map((item) => ({
+      ...item,
+      gkey: this.toInt(item.gkey),
+    }));
+  }
+
+  private normalizeTransactions(items: TransactionDto[]): TransactionDto[] {
+    return items.map((item) => ({
+      ...item,
+      bl_item_gkey: this.toInt(item.bl_item_gkey),
+    }));
+  }
+
+  private async resolveSspClassificationContext(
+    manifestId: string,
+    operationType: OperationType,
+  ): Promise<{
+    manifest: ManifestDto;
+    sspBlItems: OperationVesselItemDto[];
+  }> {
+    if (operationType !== OperationType.DISPATCHING) {
+      throw new BadRequestException('La clasificación SSP solo aplica a operativa de despacho');
+    }
+
+    const manifest = await this.getManifest(manifestId);
+    const hasMaizCommodity = await this.n4Service.hasMaizCommodity(manifest.gkey);
+
+    if (!hasMaizCommodity) {
+      throw new BadRequestException('La clasificación SSP solo aplica a operativa de maíz');
+    }
+
+    const blItems = await this.getBLItems(manifestId, operationType, manifest);
+    const sspBlItems = blItems.filter((item) => this.isSspPermission(item.nbr));
+
+    if (sspBlItems.length === 0) {
+      throw new NotFoundException('No se encontraron permisos SSP para este manifiesto');
+    }
+
+    return { manifest, sspBlItems };
+  }
+
+  private async getSspPermissionScopeMap(
+    manifestId: string,
+    blItems: OperationVesselItemDto[],
+  ): Promise<Map<number, SspPermissionScope>> {
+    const sspBlItemGkeys = blItems
+      .filter((item) => this.isSspPermission(item.nbr))
+      .map((item) => this.toInt(item.gkey));
+
+    if (sspBlItemGkeys.length === 0) {
+      return new Map<number, SspPermissionScope>();
+    }
+
+    const classifications = await this.prisma.sspPermissionClassification.findMany({
+      where: {
+        manifestId,
+        blItemGkey: { in: sspBlItemGkeys },
+      },
+      select: {
+        blItemGkey: true,
+        scope: true,
+      },
+    });
+
+    return new Map(classifications.map((item) => [item.blItemGkey, item.scope]));
+  }
+
+  async getSspPermissionClassifications(
+    manifestId: string,
+    operationType: OperationType,
+  ): Promise<SspPermissionClassificationDto[]> {
+    const { sspBlItems } = await this.resolveSspClassificationContext(
+      manifestId,
+      operationType,
+    );
+
+    const scopeMap = await this.getSspPermissionScopeMap(manifestId, sspBlItems);
+
+    return sspBlItems.map((item) => ({
+      bl_item_gkey: this.toInt(item.gkey),
+      permission_nbr: item.nbr,
+      permission_scope: scopeMap.get(this.toInt(item.gkey)) ?? null,
+    }));
+  }
+
+  async saveSspPermissionClassifications(
+    manifestId: string,
+    operationType: OperationType,
+    items: SaveSspPermissionClassificationItemDto[],
+  ): Promise<SspPermissionClassificationDto[]> {
+    const { sspBlItems } = await this.resolveSspClassificationContext(
+      manifestId,
+      operationType,
+    );
+
+    const validPermissions = new Map(
+      sspBlItems.map((item) => [this.toInt(item.gkey), item.nbr]),
+    );
+
+    const normalizedItems = Array.from(
+      new Map(
+        items.map((item) => [item.bl_item_gkey, item]),
+      ).values(),
+    );
+
+    const invalidItem = normalizedItems.find((item) => {
+      const expectedNbr = validPermissions.get(item.bl_item_gkey);
+      return !expectedNbr || expectedNbr !== item.permission_nbr;
+    });
+
+    if (invalidItem) {
+      throw new BadRequestException(
+        `El permiso SSP ${invalidItem.permission_nbr} no pertenece al manifiesto ${manifestId}`,
+      );
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      const toDelete = normalizedItems
+        .filter((item) => !item.permission_scope)
+        .map((item) => item.bl_item_gkey);
+
+      if (toDelete.length > 0) {
+        await tx.sspPermissionClassification.deleteMany({
+          where: {
+            manifestId,
+            blItemGkey: { in: toDelete },
+          },
+        });
+      }
+
+      const toUpsert = normalizedItems.filter(
+        (item): item is SaveSspPermissionClassificationItemDto & { permission_scope: SspPermissionScope } =>
+          !!item.permission_scope,
+      );
+
+      await Promise.all(
+        toUpsert.map((item) =>
+          tx.sspPermissionClassification.upsert({
+            where: {
+              manifestId_blItemGkey: {
+                manifestId,
+                blItemGkey: item.bl_item_gkey,
+              },
+            },
+            create: {
+              manifestId,
+              blItemGkey: item.bl_item_gkey,
+              permissionNbr: item.permission_nbr,
+              scope: item.permission_scope,
+            },
+            update: {
+              permissionNbr: item.permission_nbr,
+              scope: item.permission_scope,
+            },
+          }),
+        ),
+      );
+    });
+
+    return this.getSspPermissionClassifications(manifestId, operationType);
+  }
 
   // ============================================
   // WORKING VESSELS
@@ -75,12 +259,12 @@ export class GeneralCargoService {
       await this.redisService.getJson<OperationVesselItemDto[]>(cacheKey);
     if (cached) {
       this.logger.debug(`Cache hit for holds vvdGkey ${manifest.vvdGkey}`);
-      return cached;
+      return this.normalizeItems(cached);
     }
 
     const results = await this.n4Service.getHolds(manifest.vvdGkey);
     const holds: OperationVesselItemDto[] = results.map((r) => ({
-      gkey: r.gkey,
+      gkey: this.toInt(r.gkey),
       nbr: r.nbr,
       manifested_weight: r.manifested_weight,
       manifested_goods: r.manifested_goods,
@@ -105,7 +289,7 @@ export class GeneralCargoService {
       this.logger.debug(
         `Cache hit for BL items cvGkey ${manifest.gkey} isAs ${isAs}`,
       );
-      return cached;
+      return this.normalizeItems(cached);
     }
 
     const hasMaizCommodity = await this.n4Service.hasMaizCommodity(manifest.gkey);
@@ -125,7 +309,7 @@ export class GeneralCargoService {
     }
 
     const blItems: OperationVesselItemDto[] = results.map((r) => ({
-      gkey: r.gkey,
+      gkey: this.toInt(r.gkey),
       nbr: r.nbr,
       manifested_weight: r.manifested_weight,
       manifested_goods: r.manifested_goods,
@@ -144,7 +328,7 @@ export class GeneralCargoService {
 
     const cached = await this.redisService.getJson<TransactionDto[]>(cacheKey);
     if (cached) {
-      return cached;
+      return this.normalizeTransactions(cached);
     }
 
     return this.fetchAndCacheTransactions(manifestId, operationType);
@@ -169,7 +353,7 @@ export class GeneralCargoService {
 
     const transactions: TransactionDto[] = results.map((r) => ({
       hold: r.hold,
-      bl_item_gkey: r.bl_item_gkey,
+      bl_item_gkey: this.toInt(r.bl_item_gkey),
       shift: r.shift,
       total_weight: r.total_weight,
       total_goods: r.total_goods,
@@ -468,6 +652,14 @@ export class GeneralCargoService {
       this.getHoldAlerts(manifestId, operationType),
     ]);
 
+    const supportsSspClassification = operationType === OperationType.DISPATCHING
+      && (await this.n4Service.hasMaizCommodity(manifest.gkey))
+      && blItems.some((item) => this.isSspPermission(item.nbr));
+
+    const sspScopeMap = supportsSspClassification
+      ? await this.getSspPermissionScopeMap(manifestId, blItems)
+      : new Map<number, SspPermissionScope>();
+
     // Build manifest response
     const manifestResponse: Manifest = {
       id: manifest.id,
@@ -488,6 +680,7 @@ export class GeneralCargoService {
     const serviceSummaries = this.buildServiceSummaries(
       blItems,
       rawTransactions,
+      sspScopeMap,
     );
 
     // Extract unique shifts
@@ -506,6 +699,7 @@ export class GeneralCargoService {
     const data: VesselData = {
       manifest: manifestResponse,
       operation_type: operationType,
+      supports_ssp_classification: supportsSspClassification,
       summary: {
         holds: holdSummaries,
         services: serviceSummaries,
@@ -575,6 +769,7 @@ export class GeneralCargoService {
   private buildServiceSummaries(
     blItems: OperationVesselItemDto[],
     transactions: TransactionDto[],
+    sspScopeMap: Map<number, SspPermissionScope>,
   ): Summary[] {
     return blItems.map((blItem) => {
       const itemTransactions = transactions.filter(
@@ -605,6 +800,8 @@ export class GeneralCargoService {
         id: blItem.gkey,
         nbr: blItem.nbr,
         ...(blItem.commodity && { commodity: blItem.commodity }),
+        is_ssp_permission: this.isSspPermission(blItem.nbr),
+        permission_scope: sspScopeMap.get(blItem.gkey) ?? null,
         weight: {
           manifested: blItem.manifested_weight,
           processed: totalWeight,

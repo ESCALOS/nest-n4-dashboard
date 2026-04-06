@@ -14,7 +14,7 @@ import { GeneralCargoService } from './general-cargo.service';
 import { GeneralCargoEventService } from './general-cargo-event.service';
 import { OperationVesselRequestDto } from './dto/operation-vessel-request.dto';
 import { MonitoringGeneralCargoResponse } from './dto/operation-vessel-response.dto';
-import { OperationType } from './enums/operation-type.enum';
+import { SaveSspPermissionClassificationsDto } from './dto/save-ssp-permission-classifications.dto';
 
 interface MessageEvent {
   data: string | object;
@@ -215,6 +215,47 @@ export class GeneralCargoController {
     return {
       success: true,
       message: `Services refreshed for manifest ${body.manifest_id}/${body.operation_type}`,
+    };
+  }
+
+  /**
+   * Obtener clasificaciones SSP actuales para operativa maíz/despacho.
+   * GET /monitoring/general-cargo/ssp-permissions/classifications?manifest_id=XXX&operation_type=DISPATCHING
+   */
+  @Get('ssp-permissions/classifications')
+  async getSspPermissionClassifications(
+    @Query(new ValidationPipe({ transform: true }))
+    query: OperationVesselRequestDto,
+  ): Promise<{ success: boolean; data: any[] }> {
+    const data = await this.generalCargoService.getSspPermissionClassifications(
+      query.manifest_id,
+      query.operation_type,
+    );
+
+    return { success: true, data };
+  }
+
+  /**
+   * Guardar clasificaciones SSP internas/externas.
+   * POST /monitoring/general-cargo/ssp-permissions/classifications
+   */
+  @Post('ssp-permissions/classifications')
+  async saveSspPermissionClassifications(
+    @Body(new ValidationPipe({ transform: true }))
+    body: SaveSspPermissionClassificationsDto,
+  ): Promise<{ success: boolean; message: string; data: any[] }> {
+    const data = await this.generalCargoService.saveSspPermissionClassifications(
+      body.manifest_id,
+      body.operation_type,
+      body.items,
+    );
+
+    this.eventService.notifyRefresh();
+
+    return {
+      success: true,
+      message: `SSP classifications saved for manifest ${body.manifest_id}`,
+      data,
     };
   }
 
