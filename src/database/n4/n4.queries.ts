@@ -130,6 +130,7 @@ export const N4Queries = {
 
     /**
      * Get BL Items for regular operations
+     * Includes commodity_gkey for Redis-based MAÍZ detection (commodity_gkey IN 95,182)
      */
     getBLItems: `
     SELECT
@@ -137,7 +138,8 @@ export const N4Queries = {
       cbi.nbr AS nbr,
       COALESCE(TRY_CONVERT(DECIMAL(18,2), cbi.CUSTDFF_MANIFESTWEIGHT), 0) AS manifested_weight,
       COALESCE(TRY_CONVERT(INT, cbi.CUSTDFF_BULTOS), 0) AS manifested_goods,
-      rc.short_name AS commodity
+      rc.short_name AS commodity,
+      cbi.commodity_gkey AS commodity_gkey
     FROM crg_bl_item cbi
     INNER JOIN crg_bills_of_lading cbol ON cbol.gkey = cbi.bl_gkey
     INNER JOIN ref_commodity rc ON rc.gkey = cbi.commodity_gkey
@@ -146,6 +148,7 @@ export const N4Queries = {
 
     /**
      * Get BL Items for acopio -> AS false
+     * Includes commodity_gkey for Redis-based MAÍZ detection (commodity_gkey IN 95,182)
      */
     getBLItemsAS: `
     SELECT
@@ -153,23 +156,13 @@ export const N4Queries = {
       cbi.nbr AS nbr,
       COALESCE(TRY_CONVERT(DECIMAL(18,2), cbi.CUSTDFF_MANIFESTWEIGHT), 0) AS manifested_weight,
       COALESCE(TRY_CONVERT(INT, cbi.CUSTDFF_BULTOS), 0) AS manifested_goods,
-      rc.short_name AS commodity
+      rc.short_name AS commodity,
+      cbi.commodity_gkey AS commodity_gkey
     FROM crg_bl_item cbi
     INNER JOIN crg_bills_of_lading cbol ON cbol.gkey = cbi.bl_gkey
     INNER JOIN ref_commodity rc ON rc.gkey = cbi.commodity_gkey
     WHERE cbol.cv_gkey = @cvGkey AND cbi.flex_string01 = 'Y'
   `,
-
-    /**
-     * Check if manifest has MAÍZ commodity (commodity_gkey = 95 or 182)
-     */
-    hasMaizCommodity: `
-        SELECT TOP 1 1 AS has_maiz
-        FROM crg_bl_item cbi
-        INNER JOIN crg_bills_of_lading cbol ON cbol.gkey = cbi.bl_gkey
-        WHERE cbi.commodity_gkey IN (95,182)
-            AND cbol.cv_gkey = @cvGkey
-    `,
 
     /**
      * Get BL Items by BL number prefix (special-case behavior)
@@ -180,7 +173,8 @@ export const N4Queries = {
             cbi.nbr AS nbr,
             COALESCE(TRY_CONVERT(DECIMAL(18,2), cbi.CUSTDFF_MANIFESTWEIGHT), 0) AS manifested_weight,
             COALESCE(TRY_CONVERT(INT, cbi.CUSTDFF_BULTOS), 0) AS manifested_goods,
-            rc.id AS commodity
+            rc.id AS commodity,
+            cbi.commodity_gkey AS commodity_gkey
         FROM crg_bl_item cbi
         INNER JOIN crg_bills_of_lading cbol ON cbol.gkey = cbi.bl_gkey
         INNER JOIN ref_commodity rc ON rc.gkey = cbi.commodity_gkey

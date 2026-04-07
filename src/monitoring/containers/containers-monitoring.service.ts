@@ -254,7 +254,7 @@ export class ContainersMonitoringService {
     // ============================================
 
     private async validateAndGetManifest(manifestId: string): Promise<ContainerManifestInfo> {
-        const manifest = await this.n4Service.getContainerManifest(manifestId);
+        const manifest = await this.getCachedContainerManifest(manifestId);
 
         if (!manifest) {
             throw new NotFoundException(`El manifiesto ${manifestId} no existe en N4`);
@@ -275,7 +275,7 @@ export class ContainersMonitoringService {
     }
 
     private async getManifestInfo(manifestId: string): Promise<ContainerManifestInfo> {
-        const manifest = await this.n4Service.getContainerManifest(manifestId);
+        const manifest = await this.getCachedContainerManifest(manifestId);
         if (!manifest) {
             throw new NotFoundException(`El manifiesto ${manifestId} no existe en N4`);
         }
@@ -285,6 +285,35 @@ export class ContainersMonitoringService {
             vessel_name: manifest.vessel_name,
             voyage: manifest.voyage ?? null,
         };
+    }
+
+    /**
+     * Get container manifest from Redis cache or N4 database.
+     * Caches result indefinitely as manifest data doesn't change.
+     * @param manifestId - The manifest ID to retrieve
+     * @returns Container manifest info or null if not found
+     */
+    private async getCachedContainerManifest(
+        manifestId: string,
+    ): Promise<any> {
+        const cacheKey = `manifest:container:${manifestId}`;
+
+        // Try to get from Redis cache
+        const cached = await this.redisService.getJson<any>(cacheKey);
+        if (cached) {
+            this.logger.debug(`Cache hit for container manifest ${manifestId}`);
+            return cached;
+        }
+
+        // Get from N4 database
+        const manifest = await this.n4Service.getContainerManifest(manifestId);
+
+        // Cache indefinitely (no TTL) as manifest data is static
+        if (manifest) {
+            await this.redisService.setJson(cacheKey, manifest);
+        }
+
+        return manifest;
     }
 
     private emptyTimelineCache(): ContainerOperationTimelineCache {

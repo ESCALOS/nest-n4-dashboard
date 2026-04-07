@@ -237,26 +237,6 @@ export class N4Service implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  async hasMaizCommodity(cvGkey: number): Promise<boolean> {
-    try {
-      const request = this.pool.request();
-      request.input('cvGkey', sql.BigInt, cvGkey);
-
-      const result = await this.executeQuery<{ has_maiz: number }>(
-        request,
-        N4Queries.hasMaizCommodity,
-        'hasMaizCommodity',
-      );
-      return result.recordset.length > 0;
-    } catch (error) {
-      this.logger.error(
-        `Error checking MAÍZ commodity for cvGkey ${cvGkey}`,
-        error,
-      );
-      throw error;
-    }
-  }
-
   async getBLItemsByPrefix(
     cvGkey: number,
     prefix: 'SSP' | 'OS',

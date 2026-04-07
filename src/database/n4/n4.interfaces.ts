@@ -45,6 +45,7 @@ export interface VesselOperationItemResult {
     manifested_weight: number;
     manifested_goods: number;
     commodity?: string;
+    commodity_gkey: number;
 }
 
 export interface TransactionResult {
