@@ -118,11 +118,15 @@ export class ContainersMonitoringService {
         const voyage = manifest.voyage ?? '-';
         const timeline = await this.getOrUpdateOperationTimeline(manifestId, manifest.gkey, monitoringData);
 
-        const loadPending = monitoringData.summary.load.not_arrived + monitoringData.summary.load.to_load;
+        const loadPending = monitoringData.summary.load.not_arrived
+            + monitoringData.summary.load.not_arrived_in_transit
+            + monitoringData.summary.load.to_load
+            + monitoringData.summary.load.loading;
         const loadTotal = monitoringData.summary.load.total;
         const loadCurrent = loadTotal - loadPending;
 
-        const dischargePending = monitoringData.summary.discharge.to_discharge;
+        const dischargePending = monitoringData.summary.discharge.to_discharge
+            + monitoringData.summary.discharge.discharging;
         const dischargeTotal = monitoringData.summary.discharge.total;
         const dischargeCurrent = dischargeTotal - dischargePending;
 
@@ -347,14 +351,17 @@ export class ContainersMonitoringService {
             timeline.discharge,
             this.findTimelineResult(results, 'DISCHARGE'),
             data.summary.discharge.total,
-            data.summary.discharge.to_discharge,
+            data.summary.discharge.to_discharge + data.summary.discharge.discharging,
         );
 
         this.upsertTimelineEntry(
             timeline.loading,
             this.findTimelineResult(results, 'LOAD'),
             data.summary.load.total,
-            data.summary.load.not_arrived + data.summary.load.to_load,
+            data.summary.load.not_arrived
+            + data.summary.load.not_arrived_in_transit
+            + data.summary.load.to_load
+            + data.summary.load.loading,
         );
 
         this.upsertTimelineEntry(
@@ -482,6 +489,8 @@ export class ContainersMonitoringService {
         // Descarga
         if (row.actual_ib_cv === manifestGkey && row.category === 'IMPRT') {
             if (row.transit_state === 'S20_INBOUND') return 'TO_DISCHARGE';
+            if (row.transit_state === 'S30_ECIN' || row.transit_state === 'S50_ECOUT')
+                return 'DISCHARGING';
         }
 
         if (row.actual_ib_cv === manifestGkey && row.category === 'STRGE') {
@@ -497,7 +506,9 @@ export class ContainersMonitoringService {
         // Embarque
         if (row.actual_ob_cv === manifestGkey && row.category === 'EXPRT') {
             if (row.transit_state === 'S20_INBOUND') return 'NOT_ARRIVED';
+            if (row.transit_state === 'S30_ECIN') return 'NOT_ARRIVED_IN_TRANSIT';
             if (row.transit_state === 'S40_YARD') return 'TO_LOAD';
+            if (row.transit_state === 'S50_ECOUT') return 'LOADING';
             if (row.transit_state === 'S60_LOADED' || row.transit_state === 'S70_DEPARTED')
                 return 'LOADED';
         }
@@ -514,7 +525,7 @@ export class ContainersMonitoringService {
     /**
      * Extract bay from container position.
      * Discharge/Restow → arrival_position (where they came from on the vessel)
-     * Load (NOT_ARRIVED/TO_LOAD) → planned_position (where they will go)
+    * Load (NOT_ARRIVED/NOT_ARRIVED_IN_TRANSIT/TO_LOAD/LOADING) → planned_position (where they will go)
      * Loaded → position (last_pos_slot, actual vessel position: BBRRTT → BB = bay)
      */
     private extractBay(
@@ -525,13 +536,19 @@ export class ContainersMonitoringService {
 
         if (
             operationStatus === 'TO_DISCHARGE' ||
+            operationStatus === 'DISCHARGING' ||
             operationStatus === 'DISCHARGED' ||
             operationStatus === 'RESTOW_PENDING' ||
             operationStatus === 'RESTOW_ON_YARD' ||
             operationStatus === 'RESTOW_COMPLETED'
         ) {
             pos = row.arrival_position;
-        } else if (operationStatus === 'NOT_ARRIVED' || operationStatus === 'TO_LOAD') {
+        } else if (
+            operationStatus === 'NOT_ARRIVED'
+            || operationStatus === 'NOT_ARRIVED_IN_TRANSIT'
+            || operationStatus === 'TO_LOAD'
+            || operationStatus === 'LOADING'
+        ) {
             pos = row.planned_position;
         } else if (operationStatus === 'LOADED') {
             // For loaded containers, use actual position (last_pos_slot)
@@ -548,9 +565,14 @@ export class ContainersMonitoringService {
 
     private buildSummary(containers: ContainerMonitoringItemDto[]) {
         const toDischarge = containers.filter((c) => c.operation_status === 'TO_DISCHARGE').length;
+        const discharging = containers.filter((c) => c.operation_status === 'DISCHARGING').length;
         const discharged = containers.filter((c) => c.operation_status === 'DISCHARGED').length;
         const notArrived = containers.filter((c) => c.operation_status === 'NOT_ARRIVED').length;
+        const notArrivedInTransit = containers.filter(
+            (c) => c.operation_status === 'NOT_ARRIVED_IN_TRANSIT',
+        ).length;
         const toLoad = containers.filter((c) => c.operation_status === 'TO_LOAD').length;
+        const loading = containers.filter((c) => c.operation_status === 'LOADING').length;
         const loaded = containers.filter((c) => c.operation_status === 'LOADED').length;
         const restowPending = containers.filter((c) => c.operation_status === 'RESTOW_PENDING').length;
         const restowOnYard = containers.filter((c) => c.operation_status === 'RESTOW_ON_YARD').length;
@@ -560,14 +582,17 @@ export class ContainersMonitoringService {
             total_units: containers.length,
             discharge: {
                 to_discharge: toDischarge,
+                discharging,
                 discharged,
-                total: toDischarge + discharged,
+                total: toDischarge + discharging + discharged,
             },
             load: {
                 not_arrived: notArrived,
+                not_arrived_in_transit: notArrivedInTransit,
                 to_load: toLoad,
+                loading,
                 loaded,
-                total: notArrived + toLoad + loaded,
+                total: notArrived + notArrivedInTransit + toLoad + loading + loaded,
             },
             restow: {
                 pending: restowPending,
@@ -587,11 +612,14 @@ export class ContainersMonitoringService {
         for (const c of containers) {
             if (c.bay === null) continue;
 
-            if (c.operation_status === 'TO_DISCHARGE') {
+            if (c.operation_status === 'TO_DISCHARGE' || c.operation_status === 'DISCHARGING') {
                 dischargeBays.set(c.bay, (dischargeBays.get(c.bay) ?? 0) + 1);
-            } else if (c.operation_status === 'TO_LOAD') {
+            } else if (c.operation_status === 'TO_LOAD' || c.operation_status === 'LOADING') {
                 loadBays.set(c.bay, (loadBays.get(c.bay) ?? 0) + 1);
-            } else if (c.operation_status === 'NOT_ARRIVED') {
+            } else if (
+                c.operation_status === 'NOT_ARRIVED'
+                || c.operation_status === 'NOT_ARRIVED_IN_TRANSIT'
+            ) {
                 notArrivedBays.set(c.bay, (notArrivedBays.get(c.bay) ?? 0) + 1);
             } else if (c.operation_status === 'RESTOW_PENDING') {
                 restowBays.set(c.bay, (restowBays.get(c.bay) ?? 0) + 1);

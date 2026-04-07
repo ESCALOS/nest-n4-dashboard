@@ -1,8 +1,11 @@
 export type ContainerOperationStatus =
     | 'TO_DISCHARGE'
+    | 'DISCHARGING'
     | 'DISCHARGED'
     | 'NOT_ARRIVED'
+    | 'NOT_ARRIVED_IN_TRANSIT'
     | 'TO_LOAD'
+    | 'LOADING'
     | 'LOADED'
     | 'RESTOW_PENDING'
     | 'RESTOW_ON_YARD'
@@ -31,12 +34,15 @@ export interface ContainerMonitoringSummaryDto {
     total_units: number;
     discharge: {
         to_discharge: number;
+        discharging: number;
         discharged: number;
         total: number;
     };
     load: {
         not_arrived: number;
+        not_arrived_in_transit: number;
         to_load: number;
+        loading: number;
         loaded: number;
         total: number;
     };

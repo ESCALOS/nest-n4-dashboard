@@ -198,8 +198,15 @@ export class ContainersMonitoringController {
                         manifest: { id: manifestId, gkey: 0, vessel_name: 'Error' },
                         summary: {
                             total_units: 0,
-                            discharge: { to_discharge: 0, discharged: 0, total: 0 },
-                            load: { not_arrived: 0, to_load: 0, loaded: 0, total: 0 },
+                            discharge: { to_discharge: 0, discharging: 0, discharged: 0, total: 0 },
+                            load: {
+                                not_arrived: 0,
+                                not_arrived_in_transit: 0,
+                                to_load: 0,
+                                loading: 0,
+                                loaded: 0,
+                                total: 0,
+                            },
                             restow: { pending: 0, on_yard: 0, completed: 0, total: 0 },
                         },
                         pending_by_bay: { discharge: [], load: [], not_arrived: [], restow: [] },

@@ -446,9 +446,9 @@ export const N4Queries = {
      * Full query — used on first load to populate planned_position cache.
      * Includes OUTER APPLY to inv_wi for planned positions.
      *
-     * States covered:
-     *  Discharge: IMPRT/S20_INBOUND (to_discharge), STRGE/S40_YARD|S70_DEPARTED (discharged)
-     *  Load:      EXPRT/S20_INBOUND (not_arrived), EXPRT/S40_YARD (to_load), EXPRT/S60_LOADED|S70_DEPARTED (loaded)
+    * States covered:
+    *  Discharge: IMPRT/S20_INBOUND (to_discharge), IMPRT/S30_ECIN|S50_ECOUT (discharging), STRGE/S40_YARD|S70_DEPARTED (discharged)
+    *  Load:      EXPRT/S20_INBOUND (not_arrived), EXPRT/S30_ECIN (not_arrived_in_transit), EXPRT/S40_YARD (to_load), EXPRT/S50_ECOUT (loading), EXPRT/S60_LOADED|S70_DEPARTED (loaded)
      *  Restow:    THRGH+RESTOW / S20_INBOUND|S40_YARD|S60_LOADED|S70_DEPARTED
      */
     getContainerMonitoringFull: `
@@ -482,13 +482,13 @@ export const N4Queries = {
             (
                 fcy.actual_ib_cv = @carrierVisitGkey
                 AND iu.category IN ('STRGE', 'IMPRT')
-                AND fcy.transit_state IN ('S20_INBOUND', 'S40_YARD', 'S50_ECOUT', 'S60_LOADED', 'S70_DEPARTED')
+                AND fcy.transit_state IN ('S20_INBOUND', 'S30_ECIN', 'S40_YARD', 'S50_ECOUT', 'S60_LOADED', 'S70_DEPARTED')
             )
             OR
             (
                 fcy.actual_ob_cv = @carrierVisitGkey
                 AND iu.category = 'EXPRT'
-                AND fcy.transit_state IN ('S20_INBOUND', 'S40_YARD', 'S60_LOADED', 'S70_DEPARTED')
+                AND fcy.transit_state IN ('S20_INBOUND', 'S30_ECIN', 'S40_YARD', 'S50_ECOUT', 'S60_LOADED', 'S70_DEPARTED')
             )
             OR
             (
@@ -528,13 +528,13 @@ export const N4Queries = {
             (
                 fcy.actual_ib_cv = @carrierVisitGkey
                 AND iu.category IN ('STRGE', 'IMPRT')
-                AND fcy.transit_state IN ('S20_INBOUND', 'S40_YARD', 'S50_ECOUT', 'S60_LOADED', 'S70_DEPARTED')
+                AND fcy.transit_state IN ('S20_INBOUND', 'S30_ECIN', 'S40_YARD', 'S50_ECOUT', 'S60_LOADED', 'S70_DEPARTED')
             )
             OR
             (
                 fcy.actual_ob_cv = @carrierVisitGkey
                 AND iu.category = 'EXPRT'
-                AND fcy.transit_state IN ('S20_INBOUND', 'S40_YARD', 'S60_LOADED', 'S70_DEPARTED')
+                AND fcy.transit_state IN ('S20_INBOUND', 'S30_ECIN', 'S40_YARD', 'S50_ECOUT', 'S60_LOADED', 'S70_DEPARTED')
             )
             OR
             (
