@@ -14,7 +14,7 @@ import { ContainersMonitoringService } from './containers-monitoring.service';
 import { ContainersEventService } from './containers-event.service';
 import { GetContainerMonitoringQueryDto } from './dto/get-container-monitoring-query.dto';
 import { ContainerMonitoringDataDto } from './dto/container-monitoring-response.dto';
-import { RefreshContainerBookingsDto } from './dto/container-not-arrived.dto';
+
 
 interface MessageEvent {
     data: string | object;
@@ -172,39 +172,6 @@ export class ContainersMonitoringController {
     ) {
         const data = await this.containersMonitoringService.getNotArrivedContainers(query.manifest_id);
         return { success: true, data };
-    }
-
-    /**
-     * Refresh booking cache selectively for specific order_gkeys.
-     * POST /monitoring/containers/not-arrived/refresh
-     */
-    @Post('not-arrived/refresh')
-    async refreshNotArrivedBookings(
-        @Body(new ValidationPipe({ transform: true }))
-        body: RefreshContainerBookingsDto,
-    ) {
-        const result = await this.containersMonitoringService.refreshNotArrivedBookings(
-            body.manifest_id,
-            body.order_gkeys ?? [],
-        );
-
-        return { success: true, data: result };
-    }
-
-    /**
-     * Refresh booking cache for all pending containers of current manifest.
-     * POST /monitoring/containers/not-arrived/refresh-all
-     */
-    @Post('not-arrived/refresh-all')
-    async refreshNotArrivedBookingsForManifest(
-        @Body(new ValidationPipe({ transform: true }))
-        body: GetContainerMonitoringQueryDto,
-    ) {
-        const result = await this.containersMonitoringService.refreshNotArrivedBookingsForManifest(
-            body.manifest_id,
-        );
-
-        return { success: true, data: result };
     }
 
     /**

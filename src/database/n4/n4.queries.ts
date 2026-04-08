@@ -89,80 +89,67 @@ export const N4Queries = {
     `,
 
     /**
-     * Get enriched order mapping by order gkeys (batch)
-     * Returns: order_gkey, booking, commodity, shipper_ruc, shipper_name, technology
-     */
-    getDetailedOrderInfoByOrderGkeys: `
-        SELECT
-            bk.gkey AS order_gkey,
-            bk.nbr AS booking,
-            rc.short_name AS commodity,
-            shipper.id AS shipper_ruc,
-            shipper.name AS shipper_name,
-            COALESCE(ord_item.description, '-') AS technology
-        FROM inv_eq_base_order bk
-        OUTER APPLY (
-            SELECT TOP 1
-                ordeq.commodity_gkey,
-                grade.description
-            FROM inv_eq_base_order_item ord
-            LEFT JOIN ord_equipment_order_items ordeq
-                ON ordeq.gkey = ord.gkey
-            LEFT JOIN ref_equip_grades grade
-                ON grade.gkey = ordeq.eq_grade_gkey
-            WHERE ord.eqo_gkey = bk.gkey
-        ) ord_item
-        LEFT JOIN ref_commodity rc
-            ON rc.gkey = ord_item.commodity_gkey
-        LEFT JOIN ref_bizunit_scoped shipper
-            ON shipper.gkey = bk.shipper_gkey
-        WHERE bk.gkey IN (
-            SELECT TRY_CONVERT(BIGINT, value)
-            FROM STRING_SPLIT(@orderGkeys, ',')
-            WHERE TRY_CONVERT(BIGINT, value) IS NOT NULL
-        )
-    `,
-
-    /**
-     * Get base not-arrived container data by unit gkeys for a specific vessel visit.
-     * Booking/commodity/shipper/technology are resolved from cached order metadata.
+     * Get not-arrived container data enriched with booking metadata.
+     * Resolves order_gkey via COALESCE: depart_order_item > DOE appointment > PUM appointment.
+     * Returns all fields needed for the not-arrived modal in a single query.
      */
     getNotArrivedContainerBaseByUnitGkeys: `
     SELECT
+        COALESCE(CONVERT(VARCHAR(30), cita_recepcion.cita), '-') AS cita,
+        COALESCE(CONVERT(VARCHAR(19), DATEADD(HOUR, 5, cita_recepcion.fecha_cita), 126) + 'Z', '-') AS fecha_cita,
         iu.gkey AS unit_gkey,
         iu.id AS container_number,
-        bki.eqo_gkey AS order_gkey,
+        ISNULL(bk.nbr, '-') AS booking,
+        ISNULL(rc.short_name, '-') AS commodity,
+        ISNULL(shipper.name, '-') AS shipper_name,
+        ISNULL(ord_item.technology, '-') AS technology,
         COALESCE(cita_recepcion.operador, cita_despacho.operador, '-') AS operator,
         ISNULL(pod.id, '-') AS pod
     FROM inv_unit iu
+    LEFT JOIN inv_eq_base_order_item bki
+        ON bki.gkey = iu.depart_order_item_gkey
+    LEFT JOIN inv_eq_base_order bk
+        ON bk.gkey = bki.eqo_gkey
     OUTER APPLY (
         SELECT TOP 1
-            CONCAT(bu.buser_firstName,' ',bu.buser_lastName) AS operador
+            rga.id AS cita,
+            slot.start_date AS fecha_cita,
+            rga.creator AS operador,
+            rga.order_gkey AS order_gkey
         FROM road_gate_appointment rga
-        LEFT JOIN base_user bu
-            ON bu.buser_userid = rga.creator
+        LEFT JOIN road_appt_time_slot slot
+            ON slot.gkey = rga.time_slot_gkey
         WHERE rga.trans_type = 'DOE'
-            AND rga.unit_gkey = iu.gkey
             AND rga.gate_gkey = 53
-            AND rga.vessel_visit_gkey = @carrierVisitGkey
+            AND rga.order_gkey = bk.gkey
             AND rga.state <> 'CANCEL'
+        ORDER BY slot.start_date DESC
     ) cita_recepcion
     OUTER APPLY (
         SELECT TOP 1
-            CONCAT(bu.buser_firstName,' ',bu.buser_lastName) AS operador
+            rga.creator AS operador,
+            rga.order_gkey AS order_gkey
         FROM road_gate_appointment rga
-        LEFT JOIN base_user bu
-            ON bu.buser_userid = rga.creator
+        LEFT JOIN road_appt_time_slot slot
+            ON slot.gkey = rga.time_slot_gkey
         WHERE rga.trans_type = 'PUM'
-            AND rga.unit_gkey = iu.gkey
             AND rga.gate_gkey = 53
-            AND rga.vessel_visit_gkey = @carrierVisitGkey
+            AND rga.order_gkey = bk.gkey
             AND rga.state <> 'CANCEL'
+        ORDER BY slot.start_date DESC
     ) cita_despacho
-    LEFT JOIN inv_eq_base_order_item bki
-        ON bki.gkey = iu.depart_order_item_gkey
-    LEFT JOIN ref_routing_point pod
-        ON pod.gkey = iu.pod1_gkey
+    OUTER APPLY (
+        SELECT TOP 1
+            grade.id AS technology,
+            ordeq.commodity_gkey
+        FROM inv_eq_base_order_item ord
+        LEFT JOIN ord_equipment_order_items ordeq ON ordeq.gkey = ord.gkey
+        LEFT JOIN ref_equip_grades grade ON grade.gkey = ordeq.eq_grade_gkey
+        WHERE ord.eqo_gkey = bk.gkey
+    ) ord_item
+    LEFT JOIN ref_commodity rc ON rc.gkey = ord_item.commodity_gkey
+    LEFT JOIN ref_bizunit_scoped shipper ON shipper.gkey = bk.shipper_gkey
+    LEFT JOIN ref_routing_point pod ON pod.gkey = iu.pod1_gkey
     WHERE iu.gkey IN (
         SELECT TRY_CONVERT(BIGINT, value)
         FROM STRING_SPLIT(@unitGkeys, ',')
