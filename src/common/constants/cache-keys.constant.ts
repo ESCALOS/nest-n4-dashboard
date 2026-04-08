@@ -25,6 +25,8 @@ export const CACHE_KEYS = {
     `monitoring:containers:planned-positions:${manifestId}`,
   containerOperationTimeline: (manifestId: string) =>
     `monitoring:containers:operation-timeline:${manifestId}`,
+  containerOrderInfo: (orderGkey: number) =>
+    `monitoring:containers:order-info:${orderGkey}`,
 
   // Appointments module keys
   appointmentsInProgress: 'appointments:in-progress',
@@ -63,4 +65,8 @@ export const CACHE_TTL = {
   // Stage timestamps are immutable once stage is completed.
   // Keep them warm for a few hours to reduce repeated stage aggregation queries.
   appointmentStages: 6 * 60 * 60,
+
+  // Booking metadata for container not-arrived modal.
+  // Changes rarely, keep warm for longer but still refreshable manually.
+  containerOrderInfo: 30 * 24 * 60 * 60,
 };

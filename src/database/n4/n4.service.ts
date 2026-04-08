@@ -18,6 +18,8 @@ import {
   ContainerOperationTimelineResult,
   VesselByCarrierVisitResult,
   OrderInfoResult,
+  OrderInfoDetailedResult,
+  NotArrivedContainerBaseResult,
   BlItemInfoResult,
   TransactionResult,
   StockpilingTicket,
@@ -191,6 +193,50 @@ export class N4Service implements OnModuleInit, OnModuleDestroy {
       return result.recordset;
     } catch (error) {
       this.logger.error('Error getting order info by order gkeys', error);
+      throw error;
+    }
+  }
+
+  async getDetailedOrderInfoByOrderGkeys(
+    orderGkeys: number[],
+  ): Promise<OrderInfoDetailedResult[]> {
+    if (orderGkeys.length === 0) return [];
+
+    try {
+      const request = this.pool.request();
+      request.input('orderGkeys', sql.VarChar, orderGkeys.join(','));
+
+      const result = await this.executeQuery<OrderInfoDetailedResult>(
+        request,
+        N4Queries.getDetailedOrderInfoByOrderGkeys,
+        'getDetailedOrderInfoByOrderGkeys',
+      );
+      return result.recordset;
+    } catch (error) {
+      this.logger.error('Error getting detailed order info by order gkeys', error);
+      throw error;
+    }
+  }
+
+  async getNotArrivedContainerBaseByUnitGkeys(
+    carrierVisitGkey: number,
+    unitGkeys: number[],
+  ): Promise<NotArrivedContainerBaseResult[]> {
+    if (unitGkeys.length === 0) return [];
+
+    try {
+      const request = this.pool.request();
+      request.input('carrierVisitGkey', sql.BigInt, carrierVisitGkey);
+      request.input('unitGkeys', sql.VarChar, unitGkeys.join(','));
+
+      const result = await this.executeQuery<NotArrivedContainerBaseResult>(
+        request,
+        N4Queries.getNotArrivedContainerBaseByUnitGkeys,
+        'getNotArrivedContainerBaseByUnitGkeys',
+      );
+      return result.recordset;
+    } catch (error) {
+      this.logger.error('Error getting not arrived container base by unit gkeys', error);
       throw error;
     }
   }

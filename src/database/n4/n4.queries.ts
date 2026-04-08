@@ -89,6 +89,88 @@ export const N4Queries = {
     `,
 
     /**
+     * Get enriched order mapping by order gkeys (batch)
+     * Returns: order_gkey, booking, commodity, shipper_ruc, shipper_name, technology
+     */
+    getDetailedOrderInfoByOrderGkeys: `
+        SELECT
+            bk.gkey AS order_gkey,
+            bk.nbr AS booking,
+            rc.short_name AS commodity,
+            shipper.id AS shipper_ruc,
+            shipper.name AS shipper_name,
+            COALESCE(ord_item.description, '-') AS technology
+        FROM inv_eq_base_order bk
+        OUTER APPLY (
+            SELECT TOP 1
+                ordeq.commodity_gkey,
+                grade.description
+            FROM inv_eq_base_order_item ord
+            LEFT JOIN ord_equipment_order_items ordeq
+                ON ordeq.gkey = ord.gkey
+            LEFT JOIN ref_equip_grades grade
+                ON grade.gkey = ordeq.eq_grade_gkey
+            WHERE ord.eqo_gkey = bk.gkey
+        ) ord_item
+        LEFT JOIN ref_commodity rc
+            ON rc.gkey = ord_item.commodity_gkey
+        LEFT JOIN ref_bizunit_scoped shipper
+            ON shipper.gkey = bk.shipper_gkey
+        WHERE bk.gkey IN (
+            SELECT TRY_CONVERT(BIGINT, value)
+            FROM STRING_SPLIT(@orderGkeys, ',')
+            WHERE TRY_CONVERT(BIGINT, value) IS NOT NULL
+        )
+    `,
+
+    /**
+     * Get base not-arrived container data by unit gkeys for a specific vessel visit.
+     * Booking/commodity/shipper/technology are resolved from cached order metadata.
+     */
+    getNotArrivedContainerBaseByUnitGkeys: `
+    SELECT
+        iu.gkey AS unit_gkey,
+        iu.id AS container_number,
+        bki.eqo_gkey AS order_gkey,
+        COALESCE(cita_recepcion.operador, cita_despacho.operador, '-') AS operator,
+        ISNULL(pod.id, '-') AS pod
+    FROM inv_unit iu
+    OUTER APPLY (
+        SELECT TOP 1
+            CONCAT(bu.buser_firstName,' ',bu.buser_lastName) AS operador
+        FROM road_gate_appointment rga
+        LEFT JOIN base_user bu
+            ON bu.buser_userid = rga.creator
+        WHERE rga.trans_type = 'DOE'
+            AND rga.unit_gkey = iu.gkey
+            AND rga.gate_gkey = 53
+            AND rga.vessel_visit_gkey = @carrierVisitGkey
+            AND rga.state <> 'CANCEL'
+    ) cita_recepcion
+    OUTER APPLY (
+        SELECT TOP 1
+            CONCAT(bu.buser_firstName,' ',bu.buser_lastName) AS operador
+        FROM road_gate_appointment rga
+        LEFT JOIN base_user bu
+            ON bu.buser_userid = rga.creator
+        WHERE rga.trans_type = 'PUM'
+            AND rga.unit_gkey = iu.gkey
+            AND rga.gate_gkey = 53
+            AND rga.vessel_visit_gkey = @carrierVisitGkey
+            AND rga.state <> 'CANCEL'
+    ) cita_despacho
+    LEFT JOIN inv_eq_base_order_item bki
+        ON bki.gkey = iu.depart_order_item_gkey
+    LEFT JOIN ref_routing_point pod
+        ON pod.gkey = iu.pod1_gkey
+    WHERE iu.gkey IN (
+        SELECT TRY_CONVERT(BIGINT, value)
+        FROM STRING_SPLIT(@unitGkeys, ',')
+        WHERE TRY_CONVERT(BIGINT, value) IS NOT NULL
+    )
+  `,
+
+    /**
      * Get BL item mapping by BL item gkeys (batch)
      * Returns: bl_item_gkey, permiso, commodity
      */

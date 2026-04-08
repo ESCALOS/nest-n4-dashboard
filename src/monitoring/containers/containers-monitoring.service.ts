@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { N4Service } from 'src/database/n4/n4.service';
 import { RedisService } from 'src/database/redis/redis.service';
-import { CACHE_KEYS } from 'src/common/constants/cache-keys.constant';
+import { CACHE_KEYS, CACHE_TTL } from 'src/common/constants/cache-keys.constant';
 import {
     ContainerMonitoringResult,
     ContainerMonitoringRefreshResult,
@@ -13,6 +13,7 @@ import {
     ContainerOperationStatus,
 } from './dto/container-monitoring-response.dto';
 import { ContainerOperationsReportDto } from './dto/container-operations-report.dto';
+import { ContainerNotArrivedItemDto } from './dto/container-not-arrived.dto';
 
 export interface ContainerManifestInfo {
     id: string;
@@ -32,6 +33,13 @@ interface ContainerOperationTimelineCache {
     discharge: TimelineOperationCache;
     loading: TimelineOperationCache;
     restow: TimelineOperationCache;
+}
+
+interface ContainerOrderInfoCache {
+    booking: string;
+    commodity: string;
+    shipper_name: string;
+    technology: string;
 }
 
 @Injectable()
@@ -167,6 +175,110 @@ export class ContainersMonitoringService {
             },
             generated_at: new Date().toISOString(),
         };
+    }
+
+    async getNotArrivedContainers(manifestId: string): Promise<ContainerNotArrivedItemDto[]> {
+        const [manifest, monitoringData] = await Promise.all([
+            this.getManifestInfo(manifestId),
+            this.getMonitoringData(manifestId),
+        ]);
+
+        const pendingStatuses = new Set<ContainerOperationStatus>([
+            'NOT_ARRIVED',
+            'NOT_ARRIVED_IN_TRANSIT',
+        ]);
+
+        const unitGkeys = Array.from(
+            new Set(
+                monitoringData.containers
+                    .filter((c) => pendingStatuses.has(c.operation_status))
+                    .map((c) => c.unit_gkey),
+            ),
+        );
+
+        if (unitGkeys.length === 0) return [];
+
+        const baseRows = await this.n4Service.getNotArrivedContainerBaseByUnitGkeys(
+            manifest.gkey,
+            unitGkeys,
+        );
+
+        const orderGkeys = Array.from(
+            new Set(
+                baseRows
+                    .map((row) => row.order_gkey)
+                    .filter((gkey): gkey is number => typeof gkey === 'number' && gkey > 0),
+            ),
+        );
+
+        const orderInfoMap = await this.resolveContainerOrderInfo(orderGkeys);
+
+        return baseRows
+            .map((row) => {
+                const orderInfo = row.order_gkey ? orderInfoMap.get(row.order_gkey) : undefined;
+
+                return {
+                    container_number: row.container_number ?? '-',
+                    booking: orderInfo?.booking ?? '-',
+                    operator: row.operator ?? '-',
+                    pod: row.pod ?? '-',
+                    shipper_name: orderInfo?.shipper_name ?? '-',
+                    technology: orderInfo?.technology ?? '-',
+                    commodity: orderInfo?.commodity ?? '-',
+                    order_gkey: row.order_gkey ?? null,
+                };
+            })
+            .sort((a, b) => a.container_number.localeCompare(b.container_number));
+    }
+
+    async refreshNotArrivedBookings(
+        _manifestId: string,
+        orderGkeys: number[],
+    ): Promise<{ requested: number; refreshed: number }> {
+        const normalized = Array.from(
+            new Set(orderGkeys.filter((gkey) => Number.isInteger(gkey) && gkey > 0)),
+        );
+
+        if (normalized.length === 0) {
+            return { requested: 0, refreshed: 0 };
+        }
+
+        const fetched = await this.n4Service.getDetailedOrderInfoByOrderGkeys(normalized);
+        const fetchedGkeys = new Set<number>();
+
+        await Promise.all(
+            fetched.map(async (order) => {
+                fetchedGkeys.add(order.order_gkey);
+                await this.redisService.setJson(
+                    CACHE_KEYS.containerOrderInfo(order.order_gkey),
+                    {
+                        booking: order.booking ?? '-',
+                        commodity: order.commodity ?? '-',
+                        shipper_name: order.shipper_name ?? '-',
+                        technology: order.technology ?? '-',
+                    },
+                    CACHE_TTL.containerOrderInfo,
+                );
+            }),
+        );
+
+        const staleGkeys = normalized.filter((gkey) => !fetchedGkeys.has(gkey));
+        if (staleGkeys.length > 0) {
+            await Promise.all(staleGkeys.map((gkey) => this.redisService.del(CACHE_KEYS.containerOrderInfo(gkey))));
+        }
+
+        return { requested: normalized.length, refreshed: fetched.length };
+    }
+
+    async refreshNotArrivedBookingsForManifest(
+        manifestId: string,
+    ): Promise<{ requested: number; refreshed: number }> {
+        const rows = await this.getNotArrivedContainers(manifestId);
+        const orderGkeys = rows
+            .map((row) => row.order_gkey)
+            .filter((gkey): gkey is number => typeof gkey === 'number' && gkey > 0);
+
+        return this.refreshNotArrivedBookings(manifestId, orderGkeys);
     }
 
     /**
@@ -415,6 +527,59 @@ export class ContainersMonitoringService {
         const minute = String(date.getMinutes()).padStart(2, '0');
 
         return `${day}/ ${hour}${minute} hrs.`;
+    }
+
+    private async resolveContainerOrderInfo(
+        orderGkeys: number[],
+    ): Promise<Map<number, ContainerOrderInfoCache>> {
+        const mapping = new Map<number, ContainerOrderInfoCache>();
+        if (orderGkeys.length === 0) return mapping;
+
+        const cachePairs = await Promise.all(
+            orderGkeys.map(async (gkey) => {
+                const cached = await this.redisService.getJson<ContainerOrderInfoCache>(
+                    CACHE_KEYS.containerOrderInfo(gkey),
+                );
+                return [gkey, cached] as const;
+            }),
+        );
+
+        const missing: number[] = [];
+
+        for (const [gkey, cached] of cachePairs) {
+            if (cached) {
+                mapping.set(gkey, cached);
+            } else {
+                missing.push(gkey);
+            }
+        }
+
+        if (missing.length === 0) {
+            return mapping;
+        }
+
+        const fetched = await this.n4Service.getDetailedOrderInfoByOrderGkeys(missing);
+
+        await Promise.all(
+            fetched.map(async (order) => {
+                const payload: ContainerOrderInfoCache = {
+                    booking: order.booking ?? '-',
+                    commodity: order.commodity ?? '-',
+                    shipper_name: order.shipper_name ?? '-',
+                    technology: order.technology ?? '-',
+                };
+
+                mapping.set(order.order_gkey, payload);
+
+                await this.redisService.setJson(
+                    CACHE_KEYS.containerOrderInfo(order.order_gkey),
+                    payload,
+                    CACHE_TTL.containerOrderInfo,
+                );
+            }),
+        );
+
+        return mapping;
     }
 
     // ============================================

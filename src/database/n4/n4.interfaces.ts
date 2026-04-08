@@ -32,6 +32,23 @@ export interface OrderInfoResult {
     commodity: string | null;
 }
 
+export interface OrderInfoDetailedResult {
+    order_gkey: number;
+    booking: string | null;
+    commodity: string | null;
+    shipper_ruc: string | null;
+    shipper_name: string | null;
+    technology: string | null;
+}
+
+export interface NotArrivedContainerBaseResult {
+    unit_gkey: number;
+    container_number: string;
+    order_gkey: number | null;
+    operator: string;
+    pod: string;
+}
+
 export interface BlItemInfoResult {
     bl_item_gkey: number;
     permiso: string | null;
