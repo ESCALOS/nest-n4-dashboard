@@ -1,9 +1,10 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { N4Service } from '../database/n4/n4.service';
 import { RedisService } from '../database/redis/redis.service';
 import { CACHE_KEYS, CACHE_TTL } from '../common/constants/cache-keys.constant';
 import {
   AppointmentResult,
+  EirHeaderResult,
   type AppointmentStageResult,
 } from '../database/n4/n4.interfaces';
 import type { PendingAppointmentResult } from '../database/n4/n4.interfaces';
@@ -16,6 +17,11 @@ import {
   type AppointmentEstado,
   PendingAppointmentDto,
 } from './dto/pending-appointment.dto';
+import {
+  AppointmentEirPrintDataDto,
+  EirDamageDetailDto,
+  EirHeaderDto,
+} from './dto/get-eir-print-data.dto';
 
 type AppointmentStageTimestamps = {
   Tranquera: Date | null;
@@ -160,6 +166,125 @@ export class AppointmentsService {
     this.logger.debug(`Cached ${appointments.length} general cargo appointments in progress`);
 
     return response;
+  }
+
+  async getEirPrintData(appointmentId: string): Promise<AppointmentEirPrintDataDto> {
+    const normalizedAppointmentId = appointmentId?.trim();
+
+    if (!normalizedAppointmentId) {
+      throw new NotFoundException('La cita no es válida para imprimir EIR');
+    }
+
+    const appointments = await this.n4Service.getAppointmentsInProgress();
+
+    const appointment = appointments.find(
+      (row) => (row.Cita ?? '').trim() === normalizedAppointmentId,
+    );
+
+    if (!appointment) {
+      throw new NotFoundException(`No se encontró la cita ${normalizedAppointmentId}`);
+    }
+
+    return this.buildEirPrintDataFromAppointment(normalizedAppointmentId, appointment);
+  }
+
+  async getEirPrintDataForTesting(
+    appointmentId: string,
+  ): Promise<AppointmentEirPrintDataDto> {
+    const normalizedAppointmentId = appointmentId?.trim();
+
+    if (!normalizedAppointmentId) {
+      throw new NotFoundException('La cita no es válida para imprimir EIR');
+    }
+
+    const appointment = await this.n4Service.getAppointmentByIdForEirPrint(
+      normalizedAppointmentId,
+    );
+
+    if (!appointment) {
+      throw new NotFoundException(`No se encontró la cita ${normalizedAppointmentId}`);
+    }
+
+    return this.buildEirPrintDataFromAppointment(normalizedAppointmentId, appointment);
+  }
+
+  private async buildEirPrintDataFromAppointment(
+    normalizedAppointmentId: string,
+    appointment: AppointmentResult,
+  ): Promise<AppointmentEirPrintDataDto> {
+    const activeUfv = this.normalizeBigintKey(appointment.ActiveUfv);
+    const hasEir = this.normalizeBooleanFlag(appointment.HasEir) && !!activeUfv;
+    const booking = (appointment.Booking ?? '').trim();
+    const contenedor = appointment.Contenedor ?? '-'
+
+    const bookingInfoResult = booking
+      ? await this.n4Service.getBookingInfoByBooking(booking)
+      : null;
+
+    const bookingInfo = {
+      booking: bookingInfoResult?.booking ?? appointment.Booking ?? '-',
+      manifiesto: bookingInfoResult?.manifiesto ?? '-',
+      nave: bookingInfoResult?.nave ?? '-',
+      viaje: bookingInfoResult?.viaje ?? '-',
+      mercaderia: bookingInfoResult?.mercaderia ?? appointment.Producto ?? '-',
+      tempRequired: bookingInfoResult?.temp_required ?? '-',
+      tecnologia: bookingInfoResult?.tecnologia ?? '-'
+    };
+
+    if (!hasEir || !activeUfv) {
+      return {
+        appointmentId: normalizedAppointmentId,
+        hasEir: false,
+        bookingInfo,
+        eir: null,
+        damages: [],
+      };
+    }
+
+    const eirHeaderResult = await this.n4Service.getLatestEirHeaderByActiveUfv(activeUfv);
+
+    if (!eirHeaderResult) {
+      return {
+        appointmentId: normalizedAppointmentId,
+        hasEir: false,
+        bookingInfo,
+        eir: null,
+        damages: [],
+      };
+    }
+
+    const eirGkey = this.normalizeBigintKey(eirHeaderResult.gkey);
+    const damagesResult = eirGkey
+      ? await this.n4Service.getEirDamageDetailsByInspeirGkey(eirGkey)
+      : [];
+
+    const eir: EirHeaderDto = this.mapEirHeader(
+      eirHeaderResult,
+      bookingInfo.booking,
+      bookingInfo.tempRequired,
+      contenedor,
+      bookingInfo.tecnologia
+    );
+    const damages: EirDamageDetailDto[] = damagesResult.map((item) => ({
+      location: item.location ?? '-',
+      damageType: item.damageType ?? '-',
+      component: item.component ?? '-',
+      repairMethod: item.repairMethod ?? '-',
+      responsible: item.responsible ?? '-',
+      quantity: item.quantity ?? null,
+      eirNbr: item.eirNbr ?? '-',
+      length: item.length ?? null,
+      width: item.width ?? null,
+      area: item.area ?? null,
+    }));
+
+    return {
+      appointmentId: normalizedAppointmentId,
+      hasEir: true,
+      bookingInfo,
+      eir,
+      damages,
+    };
   }
 
   // ============================================
@@ -718,6 +843,7 @@ export class AppointmentsService {
       tipo: r.Tipo ?? 'N.E.',
       tipoOperativa: r.Tipo ?? 'N.E.',
       puertoDescarga: r.PuertoDescarga ?? null,
+      hasEir: this.normalizeBooleanFlag(r.HasEir),
     };
   }
 
@@ -817,7 +943,72 @@ export class AppointmentsService {
       tipo: r.TipoOperativa ?? r.Tipo ?? 'N.E.',
       tipoOperativa: r.TipoOperativa ?? r.Tipo ?? 'N.E.',
       puertoDescarga: r.PuertoDescarga ?? null,
+      hasEir: false,
     };
+  }
+
+  private mapEirHeader(
+    row: EirHeaderResult,
+    fallbackBooking: string,
+    fallbackTempRequired: string,
+    fallbackContenedor: string,
+    fallbackTecnologia: string,
+  ): EirHeaderDto {
+    return {
+      gkey: this.normalizeBigintKey(row.gkey) ?? '',
+      codigo: row.codigo ?? '-',
+      lineaNaviera: row.lineaNaviera ?? '-',
+      nave: row.nave ?? '-',
+      manifiesto: row.manifiesto ?? '-',
+      viaje: row.viaje ?? '-',
+      mercaderia: row.mercaderia ?? '-',
+      inicio: this.normalizeDate(row.inicio),
+      fin: this.normalizeDate(row.fin),
+      tecnico: row.tecnico ?? '-',
+      contenedor: fallbackContenedor,
+      iso: row.iso ?? '-',
+      tipo: row.tipo ?? '-',
+      tara: row.tara ?? null,
+      pesoMaximo: row.pesoMaximo ?? null,
+      pesoBruto: row.pesoBruto ?? null,
+      estado: row.estado ?? '-',
+      resultado: row.resultado ?? '-',
+      tipoCarga: row.tipoCarga ?? '-',
+      clasificacion: row.clasificacion ?? '-',
+      condicion: row.condicion ?? '-',
+      fabricacion: row.fabricacion ?? '-',
+      precintos: row.precintos ?? '-',
+      booking: row.booking ?? fallbackBooking,
+      placa: row.placa ?? '-',
+      chofer: row.chofer ?? '-',
+      humedad: row.humedad ?? '-',
+      ventilacion: row.ventilacion ?? '-',
+      tecnologia: fallbackTecnologia,
+      temperaturaBooking: fallbackTempRequired,
+      temperatura: row.temperatura ?? '-',
+      o2: row.o2 ?? '-',
+      co2: row.co2 ?? '-',
+      door: this.normalizeDamageList(row.door),
+      front: this.normalizeDamageList(row.front),
+      leftSide: this.normalizeDamageList(row.leftSide),
+      rightSide: this.normalizeDamageList(row.rightSide),
+      topRoof: this.normalizeDamageList(row.topRoof),
+      inner: this.normalizeDamageList(row.inner),
+      understructure: this.normalizeDamageList(row.understructure),
+      observaciones: row.observaciones ?? '-',
+    };
+  }
+
+  private normalizeDamageList(value: string | null | undefined): string {
+    if (!value) return '-';
+
+    const items = value
+      .split(',')
+      .map((part) => part.trim())
+      .filter(Boolean);
+
+    if (items.length === 0) return '-';
+    return items.map((item) => `- ${item}`).join('\n');
   }
 
   private shouldRefetchStageTimestamps(
@@ -980,6 +1171,16 @@ export class AppointmentsService {
     }
 
     return null;
+  }
+
+  private normalizeBooleanFlag(value: unknown): boolean {
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'number') return value === 1;
+    if (typeof value === 'string') {
+      const normalized = value.trim().toLowerCase();
+      return normalized === '1' || normalized === 'true';
+    }
+    return false;
   }
 
   private getStageField(

@@ -1,9 +1,13 @@
-import { Controller, Get, Sse, Logger } from '@nestjs/common';
+import { Controller, Get, Sse, Logger, Param } from '@nestjs/common';
 import { Observable, switchMap, startWith, finalize, interval, map, merge } from 'rxjs';
 import { AppointmentsService } from './appointments.service';
 import { AppointmentsEventService } from './appointments-event.service';
 import { AppointmentsResponseDto } from './dto/appointment-in-progress.dto';
 import { PendingAppointmentsResponseDto } from './dto/pending-appointment.dto';
+import {
+  AppointmentEirPrintDataDto,
+  GetEirPrintDataDto,
+} from './dto/get-eir-print-data.dto';
 
 interface MessageEvent {
   data: string | object;
@@ -39,6 +43,27 @@ export class AppointmentsController {
   @Get('in-progress/general-cargo')
   async getGeneralCargoAppointmentsInProgress(): Promise<AppointmentsResponseDto> {
     return this.appointmentsService.getGeneralCargoAppointmentsInProgress();
+  }
+
+  /**
+   * REST endpoint — get EIR print data by appointment id.
+   */
+  @Get('in-progress/:appointmentId/eir-print-data')
+  async getEirPrintData(
+    @Param() params: GetEirPrintDataDto,
+  ): Promise<AppointmentEirPrintDataDto> {
+    return this.appointmentsService.getEirPrintData(params.appointmentId);
+  }
+
+  /**
+   * REST endpoint — EIR print data test by appointment id.
+   * Direct DB lookup for testing when the appointment is no longer in progress.
+   */
+  @Get('test/:appointmentId/eir-print-data')
+  async getEirPrintDataForTesting(
+    @Param() params: GetEirPrintDataDto,
+  ): Promise<AppointmentEirPrintDataDto> {
+    return this.appointmentsService.getEirPrintDataForTesting(params.appointmentId);
   }
 
   /**

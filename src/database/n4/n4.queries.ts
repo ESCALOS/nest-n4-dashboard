@@ -726,7 +726,18 @@ export const N4Queries = {
             WHEN 'DE' THEN 'Ingreso Export'
             ELSE gat.sub_type
         END AS Tipo,
-        pod.id AS PuertoDescarga
+        pod.id AS PuertoDescarga,
+        unit.active_ufv AS ActiveUfv,
+        CASE
+            WHEN unit.active_ufv IS NOT NULL
+                AND EXISTS (
+                    SELECT 1
+                    FROM CUSTOM_INSPEIR ci
+                    WHERE ci.CUSTOMINSEIR_UFV = unit.active_ufv
+                )
+            THEN 1
+            ELSE 0
+        END AS HasEir
     FROM road_truck_transactions gat
     LEFT JOIN inv_unit unit ON unit.gkey = gat.unit_gkey
     LEFT JOIN road_gate_appointment appt ON appt.id = gat.appointment_nbr
@@ -737,6 +748,248 @@ export const N4Queries = {
 
     WHERE gat.status = 'OK'
     AND gat.gate_gkey = 53
+  `,
+
+    /**
+     * Get appointment by appointment id for EIR print testing.
+     * Does not depend on "in-progress" status.
+     */
+    getAppointmentByIdForEirPrint: `
+    SELECT TOP 1
+        appt.id AS Cita,
+        COALESCE(gat.eqo_nbr, bk.nbr, 'N.E.') AS Booking,
+        shipper.name AS Cliente,
+        ISNULL(unit.id, 'N.E.') AS Contenedor,
+        ISNULL(gat.flex_string24, appt.ufv_flex_string09, 'N.E.') AS Tecnologia,
+        unit.active_ufv AS ActiveUfv,
+        CASE
+            WHEN unit.active_ufv IS NOT NULL
+                AND EXISTS (
+                    SELECT 1
+                    FROM CUSTOM_INSPEIR ci
+                    WHERE ci.CUSTOMINSEIR_UFV = unit.active_ufv
+                )
+            THEN 1
+            ELSE 0
+        END AS HasEir
+    FROM road_gate_appointment appt
+    LEFT JOIN inv_unit unit
+        ON unit.gkey = appt.unit_gkey
+    LEFT JOIN inv_eq_base_order bk
+        ON bk.gkey = appt.order_gkey
+    LEFT JOIN ref_bizunit_scoped shipper
+        ON shipper.gkey = appt.shipper_gkey
+    OUTER APPLY (
+        SELECT TOP 1
+            t.eqo_nbr,
+            t.flex_string24,
+            t.gkey
+        FROM road_truck_transactions t
+        WHERE t.appointment_nbr = appt.id
+        ORDER BY t.gkey DESC
+    ) gat
+    WHERE appt.id = @appointmentId
+  `,
+
+    /**
+     * Get booking info by booking number.
+     * Used to enrich EIR print payload (booking section).
+     */
+    getBookingInfoByBooking: `
+    SELECT TOP 1
+        bk.nbr AS booking,
+        acv.id AS manififesto,
+        ves.name AS nave,
+        vvvd.ob_vyg AS viaje,
+        rc.short_name AS mercaderia,
+        ord_item.temp_required AS tempRequerida,
+        CONCAT(
+            COALESCE(grade.id, ''), ' (',
+            COALESCE(grade.description, ''), ')'
+        ) AS tecnologia
+    FROM inv_eq_base_order bk
+    LEFT JOIN argo_carrier_visit acv
+        ON acv.gkey = bk.vessel_visit_gkey
+    LEFT JOIN vsl_vessel_visit_details vvvd
+        ON vvvd.vvd_gkey = cvcvd_gkey
+    LEFT JOIN vsl_vessels ves
+        ON ves.gkey = vvvd.vessel_gkey
+    OUTER APPLY (
+        SELECT TOP 1
+            eqi.commodity_gkey,
+            eqi.eq_grade_gkey,
+            eqi.temp_required
+        FROM inv_eq_base_order_item ord
+        LEFT JOIN ord_equipment_order_items eqi
+            ON eqi.gkey = ord.gkey
+        WHERE ord.eqo_gkey = bk.gkey
+    ) ord_item
+    LEFT JOIN ref_commodity rc
+        ON rc.gkey = ord_item.commodity_gkey
+    LEFT JOIN ref_equip_grades grade
+        ON grade.gkey = ord_item.eq_grade_gkey
+    WHERE bk.nbr = @booking
+    ORDER BY bk.gkey DESC
+  `,
+
+    /**
+     * Get latest EIR header by active UFV.
+     * Returns TOP 1 ordered by ci.gkey DESC.
+     */
+    getLatestEirHeaderByActiveUfv: `
+    SELECT TOP 1
+        ci.gkey,
+        ci.CUSTOMINSEIR_NBR AS codigo,
+        ci.CUSTOMINSEIR_OPERATOR AS lineaNaviera,
+	    ci.CUSTOMINSEIR_GATE AS gate,
+        ci.CUSTOMINSEIR_STARTINSP AS inicio,
+        COALESCE(ci.CUSTOMINSEIR_ENDINSPTARE, ci.CUSTOMINSEIR_ENDINSP) AS fin,
+        CONCAT(bu.buser_firstName, ' ', bu.buser_lastName) AS tecnico,
+        ci.CUSTOMINSEIR_UNITISO AS iso,
+        CASE
+            WHEN ci.CUSTOMINSEIR_UNITISO IN (
+                '4839','48R9','48R0','4830','4832','4833','4834','4835','4836','4837','4838',
+                '48R2','48R3','48R4','48R5','48R6','48R7','48R8','48R1','4831','4239','42R9',
+                '4339','43R9','4330','4230','43R0','42R0','42R2','42R3','42R4','42R5','42R6',
+                '42R7','42R8','43R2','43R3','43R4','43R5','43R6','43R7','43R8','4332','4333',
+                '4334','4335','4336','4337','4338','4232','4233','4234','4235','4236','4237',
+                '4238','4231','4331','42R1','43R1','4539','45R9','4530','45R0','45R1','45R8',
+                '45R2','45RT','45R3','45R4','45R5','45R6','45R7','4532','4533','4534','4535',
+                '4536','4537','4538','4531'
+            ) THEN 'REEFER HIGH CUBE'
+            WHEN ci.CUSTOMINSEIR_UNITISO IN (
+                '4823','4824','4825','4826','4827','4828','4829','48B3','48B4','48B5',
+                '48B6','48B7','48B8','48B9','4883','4884','4885','4886','4887','4888',
+                '4889','48B0','48B1','48B2','4880','4881','4882','4820','4821','4822',
+                '48G0','48G1','48G2','48G3','48G4','48G5','48G6','48G7','48G8','48G9',
+                '4800','4801','4802','4803','4804','4805','4806','4807','4808','4809',
+                '4863','4864','48P3','48P4','4861','4862','48P6','48P7','48P8','48P9',
+                '48P1','48P2','4866','4867','4868','4869','48P0','4860','48P5','4865',
+                '48S0','48S1','48S2','48S3','48S4','48S5','48S6','48S7','48S8','48S9',
+                '48T3','48T4','48T5','48T6','4873','4874','4875','4876','4877','4878',
+                '4879','48T7','48T8','48T9','4870','4871','4872','48T0','48T1','48T2',
+                '48U6','4856','4857','4858','4859','48U0','48U1','48U2','48U3','48U4',
+                '48U5','4850','4851','4852','4853','4854','4855','48U7','48U8','48U9',
+                '4810','4811','4812','4813','4814','4815','4816','4817','4818','4819',
+                '48V0','48V1','48V2','48V3','48V4','48V5','48V6','48V7','48V8','48V9',
+                '4000','4060','4050','4223','4224','4225','4226','4227','4228','4229',
+                '4283','4284','4285','4286','4287','4288','4289','42B3','42B4','42B5',
+                '42B6','42B7','42B8','42B9','4323','4324','432getBookingInfoByBooking5','4326','4327','4328',
+                '4329','4383','4384','4385','4386','4387','4388','4389','43B3','43B4',
+                '43B5','43B6','43B7','43B8','43B9','4220','4221','4222','43B0','43B1',
+                '43B2','4380','4381','4382','4320','4321','4322','42B0','42B1','42B2',
+                '4280','4281','4282','4200','4300','4301','4302','4303','4304','4305',
+                '4306','4307','4308','4309','42G0','42G1','42G2','42G3','42G4','42G5',
+                '42G6','42G7','42G8','42G9','4201','4202','4203','4204','4205','4206',
+                '4207','4208','4209','43G0','43G1','43G2','43G3','43G4','43G5','43G6',
+                '43G7','43G8','43G9','43P3','43P4','4363','4364','4263','4264','42P3',
+                '42P4','42P1','42P2','4266','4267','4268','4269','4361','4362','4366',
+                '4367','4368','4369','4261','4262','42P6','42P7','42P8','42P9','43P1',
+                '43P2','43P6','43P7','43P8','43P9','49P0','43P0','4360','4260','42P0',
+                '4265','4365','43P5','42P5','42S0','42S1','42S2','42S3','42S4','42S5',
+                '42S6','42S7','42S8','42S9','43S0','43S1','43S2','43S3','43S4','43S5',
+                '43S6','43S7','43S8','43S9','4273','4274','4275','4276','4373','4374',
+                '4375','4376','43T3','43T4','43T5','43T6','42T3','42T4','42T5','42T6',
+                '42T7','42T8','42T9','43T7','43T8','43T9','4377','4378','4379','4277',
+                '4278','4279','4370','4371','4372','43T0','43T1','43T2','4271','4272',
+                '4270','42T0','42T1','42T2','4356','4256','43U6','42U6','4250','42U0',
+                '42U1','42U2','42U3','42U4','42U5','4251','4252','4253','4254','4255',
+                '42U7','42U8','42U9','4257','4258','4259','4357','4358','4359','43U7',
+                '43U8','43U9','43U0','43U1','43U2','43U3','43U4','43U5','4350','4351',
+                '4352','4353','4354','4355','4310','4311','4312','4313','4314','4315',
+                '4316','4317','4318','4319','43V0','43V1','43V2','43V3','43V4','43V5',
+                '43V6','43V7','43V8','43V9','4210','4211','4212','4213','4214','4215',
+                '4216','4217','4218','4219','42V0','42V1','42V2','42V3','42V4','42V5',
+                '42V6','42V7','42V8','42V9','4523','4524','4525','4526','4527','4528',
+                '4529','4583','4584','4585','4586','4587','4588','4589','45B3','45B4',
+                '45B5','45B6','45B7','45B8','45B9','45B0','45B1','45B2','4580','4581',
+                '4582','4520','4521','4522','4500','45G0','45G1','45G2','45G3','45G4',
+                '45G5','45G6','45G7','45G8','45G9','4501','4502','4503','4504','4505',
+                '4506','4507','4508','4509','45P3','45P4','4563','4564','4561','4562',
+                '4566','4567','4568','4569','45P1','45P2','45P6','45P7','45P8','45P9',
+                '4560','45P0','4565','45P5','45S0','45S1','45S2','45S3','45S4','45S5',
+                '45S6','45S7','45S8','45S9','45T3','45T4','45T5','45T6','4573','4574',
+                '4575','4576','4577','4578','4579','45T7','45T8','45T9','4570','4571',
+                '4572','45T0','45T1','45T2','45U6','4556','4557','4558','4559','4550',
+                '4551','4552','4553','4554','4555','45U7','45U8','45U9','45U0','45U1',
+                '45U2','45U3','45U4','45U5','4510','4511','4512','4513','4514','4515',
+                '4516','4517','4518','4519','45V0','45V1','45V2','45V3','45V4','45V5',
+                '45V6','45V7','45V8','45V9'
+            ) THEN 'HIGH CUBE'
+            ELSE 'DRY GENERAL'
+        END AS tipo,
+        ci.CUSTOMINSEIR_UNITTARE AS tara,
+        ci.CUSTOMINSEIR_PAYLOAD AS pesoMaximo,
+        ci.CUSTOMINSEIR_SAFEWT AS pesoBruto,
+        CASE
+            WHEN ci.CUSTOMINSEIR_FREIGHT = 'MTY' THEN 'ESTADO (VACIO / EMPTY)'
+            WHEN ci.CUSTOMINSEIR_FREIGHT = 'FCL' THEN 'ESTADO (LLENO / FULL)'
+            ELSE ci.CUSTOMINSEIR_FREIGHT
+        END AS estado,
+        resultado.CUSTOMEIRRES_DESC AS resultado,
+        ci.CUSTOMINSEIR_FREIGHT AS tipoCarga,
+        ci.CUSTOMINSEIR_CLASSIF AS clasificacion,
+        ci.CUSTOMINSEIR_FREIGHT AS condicion,
+        ci.CUSTOMINSEIR_BUILDDATE AS fabricacion,
+        CONCAT(
+            ci.CUSTOMINSEIR_SEAL1,' / ',ci.CUSTOMINSEIR_SEAL2,' / ',
+            ci.CUSTOMINSEIR_SEAL3,' / ',ci.CUSTOMINSEIR_SEAL4
+        ) AS precintos,
+        ci.CUSTOMINSEIR_BOOK AS booking,
+        ci.CUSTOMINSEIR_TRUCK AS placa,
+        UPPER(CONCAT(ci.CUSTOMINSEIR_DRIVER, ' - ', rtd.name)) AS chofer,
+        ci.CUSTOMINSEIR_HUMIDITY AS humedad,
+        ci.CUSTOMINSEIR_VENT AS ventilacion,
+        ci.CUSTOMINSEIR_TEMP AS temperatura,
+        ci.CUSTOMINSEIR_O2 AS o2,
+        ci.CUSTOMINSEIR_CO2 AS co2,
+        ci.CUSTOMINSEIR_DOOR AS door,
+        ci.CUSTOMINSEIR_FRONT AS front,
+        ci.CUSTOMINSEIR_LEFT AS leftSide,
+        ci.CUSTOMINSEIR_RIGHT AS rightSide,
+        ci.CUSTOMINSEIR_ROOF AS topRoof,
+        ci.CUSTOMINSEIR_INNER AS [inner],
+        ci.CUSTOMINSEIR_UNDERSTRUCTURE AS understructure,
+        ci.CUSTOMINSEIR_REMARKS AS observaciones
+    FROM CUSTOM_INSPEIR ci
+    INNER JOIN inv_unit_fcy_visit iufv
+        ON iufv.gkey = ci.CUSTOMINSEIR_UFV
+    LEFT JOIN base_user bu
+        ON bu.buser_userid = ci.CUSTOMINSEIR_CREATOR
+    LEFT JOIN road_truck_drivers rtd
+        ON rtd.driver_license_nbr = ci.CUSTOMINSEIR_DRIVER
+    LEFT JOIN CUSTOM_RESULTS_EIR resultado
+        ON resultado.gkey = ci.CUSTOMINSEIR_RESULT
+    WHERE ci.CUSTOMINSEIR_UFV = TRY_CONVERT(BIGINT, @activeUfv)
+    ORDER BY ci.gkey DESC
+  `,
+
+    /**
+     * Get EIR damage details by inspection EIR gkey.
+     */
+    getEirDamageDetailsByInspeirGkey: `
+    SELECT
+        dam.CUSTOMEIRDAM_CODE AS location,
+        CONCAT(daty.CUSTOMEIRDMG_ID, ' - ', daty.CUSTOMEIRDMG_DESC) AS damageType,
+        CONCAT(comp.CUSTOMEIRCOM_ID, ' - ', comp.CUSTOMEIRCOM_DESC) AS component,
+        CONCAT(meth.CUSTOMMETREP_ID, ' - ', meth.CUSTOMMETREP_DESC) AS repairMethod,
+        CONCAT(resp.CUSTOMRESPEI_ID, ' - ', resp.CUSTOMRESPEI_DESC) AS responsible,
+        dam.CUSTOMEIRDAM_QTY AS quantity,
+        dam.CUSTOMEIRDAM_INSPEIR AS eirNbr,
+        dam.CUSTOMEIRDAM_LENGTH AS length,
+        dam.CUSTOMEIRDAM_WIDTH AS width,
+        dam.CUSTOMEIRDAM_AREA AS area
+    FROM CUSTOM_INSPEIRDAM dam
+    LEFT JOIN CUSTOM_DAMTYPE_EIR daty
+        ON daty.gkey = dam.CUSTOMEIRDAM_DAMTYPE
+    LEFT JOIN CUSTOM_COMP_EIR comp
+        ON comp.gkey = dam.CUSTOMEIRDAM_COMP
+    LEFT JOIN CUSTOM_REPAIRMETH_EIR meth
+        ON meth.gkey = dam.CUSTOMEIRDAM_REPMET
+    LEFT JOIN CUSTOM_RESPONSIBLE_EIR resp
+        ON resp.gkey = dam.CUSTOMEIRDAM_RESP
+    WHERE dam.CUSTOMEIRDAM_INSPEIR = TRY_CONVERT(BIGINT, @eirGkey)
+    ORDER BY dam.gkey ASC
   `,
 
     /**

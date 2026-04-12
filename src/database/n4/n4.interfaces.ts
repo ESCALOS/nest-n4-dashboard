@@ -131,6 +131,73 @@ export interface AppointmentResult {
     Tipo?: string;
     TipoOperativa?: string;
     PuertoDescarga?: string;
+    ActiveUfv?: number | string | null;
+    HasEir?: number | boolean | null;
+}
+
+export interface BookingInfoResult {
+    booking: string | null;
+    linea: string | null;
+    manifiesto: string | null;
+    nave: string | null;
+    viaje: string | null;
+    mercaderia: string | null;
+    temp_required: string | null;
+    tecnologia: string | null;
+}
+
+export interface EirHeaderResult {
+    gkey: number | string;
+    codigo: string | null;
+    lineaNaviera: string | null;
+    nave: string | null;
+    manifiesto: string | null;
+    viaje: string | null;
+    mercaderia: string | null;
+    inicio: Date | null;
+    fin: Date | null;
+    tecnico: string | null;
+    iso: string | null;
+    tipo: string | null;
+    tara: number | null;
+    pesoMaximo: number | null;
+    pesoBruto: number | null;
+    estado: string | null;
+    resultado: string | null;
+    tipoCarga: string | null;
+    clasificacion: string | null;
+    condicion: string | null;
+    fabricacion: string | null;
+    precintos: string | null;
+    booking: string | null;
+    placa: string | null;
+    chofer: string | null;
+    humedad: string | null;
+    ventilacion: string | null;
+    temperatura: string | null;
+    o2: string | null;
+    co2: string | null;
+    door: string | null;
+    front: string | null;
+    leftSide: string | null;
+    rightSide: string | null;
+    topRoof: string | null;
+    inner: string | null;
+    understructure: string | null;
+    observaciones: string | null;
+}
+
+export interface EirDamageResult {
+    location: string | null;
+    damageType: string | null;
+    component: string | null;
+    repairMethod: string | null;
+    responsible: string | null;
+    quantity: number | null;
+    eirNbr: string | null;
+    length: number | null;
+    width: number | null;
+    area: number | null;
 }
 
 export interface AppointmentStageResult {

@@ -46,6 +46,7 @@ export class AppointmentInProgressDto {
   tipo: string;
   tipoOperativa: string;
   puertoDescarga: string | null;
+  hasEir: boolean;
 }
 
 export class AppointmentsResponseDto {

@@ -18,6 +18,9 @@ import {
   ContainerOperationTimelineResult,
   VesselByCarrierVisitResult,
   OrderInfoResult,
+  BookingInfoResult,
+  EirHeaderResult,
+  EirDamageResult,
   NotArrivedContainerBaseResult,
   BlItemInfoResult,
   TransactionResult,
@@ -420,6 +423,26 @@ export class N4Service implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  async getAppointmentByIdForEirPrint(
+    appointmentId: string,
+  ): Promise<AppointmentResult | null> {
+    try {
+      const request = this.pool.request();
+      request.input('appointmentId', sql.VarChar, appointmentId);
+
+      const result = await this.executeQuery<AppointmentResult>(
+        request,
+        N4Queries.getAppointmentByIdForEirPrint,
+        'getAppointmentByIdForEirPrint',
+      );
+
+      return result.recordset[0] ?? null;
+    } catch (error) {
+      this.logger.error(`Error getting appointment ${appointmentId} for EIR print`, error);
+      throw error;
+    }
+  }
+
   async getGeneralCargoAppointmentsInProgress(): Promise<AppointmentResult[]> {
     try {
       const request = this.pool.request();
@@ -467,6 +490,66 @@ export class N4Service implements OnModuleInit, OnModuleDestroy {
       return result.recordset;
     } catch (error) {
       this.logger.error('Error getting pending appointments', error);
+      throw error;
+    }
+  }
+
+  async getBookingInfoByBooking(
+    booking: string,
+  ): Promise<BookingInfoResult | null> {
+    try {
+      const request = this.pool.request();
+      request.input('booking', sql.VarChar, booking);
+
+      const result = await this.executeQuery<BookingInfoResult>(
+        request,
+        N4Queries.getBookingInfoByBooking,
+        'getBookingInfoByBooking',
+      );
+
+      return result.recordset[0] ?? null;
+    } catch (error) {
+      this.logger.error(`Error getting booking info for booking ${booking}`, error);
+      throw error;
+    }
+  }
+
+  async getLatestEirHeaderByActiveUfv(
+    activeUfv: number | string,
+  ): Promise<EirHeaderResult | null> {
+    try {
+      const request = this.pool.request();
+      request.input('activeUfv', sql.VarChar, String(activeUfv));
+
+      const result = await this.executeQuery<EirHeaderResult>(
+        request,
+        N4Queries.getLatestEirHeaderByActiveUfv,
+        'getLatestEirHeaderByActiveUfv',
+      );
+
+      return result.recordset[0] ?? null;
+    } catch (error) {
+      this.logger.error(`Error getting latest EIR by active_ufv ${activeUfv}`, error);
+      throw error;
+    }
+  }
+
+  async getEirDamageDetailsByInspeirGkey(
+    eirGkey: number | string,
+  ): Promise<EirDamageResult[]> {
+    try {
+      const request = this.pool.request();
+      request.input('eirGkey', sql.VarChar, String(eirGkey));
+
+      const result = await this.executeQuery<EirDamageResult>(
+        request,
+        N4Queries.getEirDamageDetailsByInspeirGkey,
+        'getEirDamageDetailsByInspeirGkey',
+      );
+
+      return result.recordset;
+    } catch (error) {
+      this.logger.error(`Error getting EIR damage details by gkey ${eirGkey}`, error);
       throw error;
     }
   }
