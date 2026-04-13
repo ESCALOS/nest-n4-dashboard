@@ -491,7 +491,7 @@ export const N4Queries = {
         ISNULL(ciwt.CUSTOMWGTRAN_TRUCK_ID, '') AS tracto,
         ISNULL(ciwt.CUSTOMWGTRAN_CHASSIS_NUM, '') AS chassis,
         ISNULL(driv.name, '') AS conductor,
-        ISNULL(CONVERT(VARCHAR, m.t_put, 120), '') AS fechaSalida
+        ISNULL(CONVERT(VARCHAR, move.t_put, 120), '') AS fechaSalida
     FROM CUSTOM_IND_WEIGHING_TRANS ciwt
     INNER JOIN inv_unit iu ON iu.id = ciwt.CUSTOMWGTRAN_CTRNBR
     LEFT JOIN road_truck_drivers driv ON driv.gkey = ciwt.CUSTOMWGTRAN_DRIVER
