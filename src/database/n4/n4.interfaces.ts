@@ -150,10 +150,8 @@ export interface EirHeaderResult {
     gkey: number | string;
     codigo: string | null;
     lineaNaviera: string | null;
-    nave: string | null;
-    manifiesto: string | null;
-    viaje: string | null;
     mercaderia: string | null;
+    gate: string | null;
     inicio: Date | null;
     fin: Date | null;
     tecnico: string | null;

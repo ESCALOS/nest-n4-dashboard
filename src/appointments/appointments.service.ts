@@ -263,7 +263,9 @@ export class AppointmentsService {
       bookingInfo.booking,
       bookingInfo.tempRequired,
       contenedor,
-      bookingInfo.tecnologia
+      bookingInfo.tecnologia,
+      bookingInfo.nave,
+      bookingInfo.viaje
     );
     const damages: EirDamageDetailDto[] = damagesResult.map((item) => ({
       location: item.location ?? '-',
@@ -953,14 +955,16 @@ export class AppointmentsService {
     fallbackTempRequired: string,
     fallbackContenedor: string,
     fallbackTecnologia: string,
+    fallbackNave: string,
+    fallbackViaje: string,
   ): EirHeaderDto {
     return {
       gkey: this.normalizeBigintKey(row.gkey) ?? '',
       codigo: row.codigo ?? '-',
       lineaNaviera: row.lineaNaviera ?? '-',
-      nave: row.nave ?? '-',
-      manifiesto: row.manifiesto ?? '-',
-      viaje: row.viaje ?? '-',
+      nave: fallbackNave ?? '-',
+      viaje: fallbackViaje ?? '-',
+      gate: row.gate ?? '-',
       mercaderia: row.mercaderia ?? '-',
       inicio: this.normalizeDate(row.inicio),
       fin: this.normalizeDate(row.fin),

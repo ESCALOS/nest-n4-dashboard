@@ -32,9 +32,9 @@ export class EirHeaderDto {
     gkey: string;
     codigo: string;
     lineaNaviera: string | null;
-    nave: string;
-    manifiesto: string | null;
+    nave: string | null;
     viaje: string | null;
+    gate: string | null;
     inicio: Date | null;
     mercaderia: string | null;
     fin: Date | null;
