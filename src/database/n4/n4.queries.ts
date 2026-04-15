@@ -623,12 +623,12 @@ export const N4Queries = {
     getContainerOperationTimeline: `
     SELECT
         op.operation_type,
-        MIN(DATEADD(HOUR, 5, ime.t_put)) AS start_time,
-        MAX(DATEADD(HOUR, 5, ime.t_put)) AS end_time
+        MIN(ime.t_put) AS start_time,
+        MAX(ime.t_put) AS end_time
     FROM inv_move_event ime
     INNER JOIN inv_unit_fcy_visit iufv 
         ON iufv.gkey = ime.ufv_gkey
-    INNER JOIN inv_unit iu 
+    INNER JOIN inv_unit iu
         ON iu.gkey = iufv.unit_gkey
     CROSS APPLY (
         SELECT CASE 

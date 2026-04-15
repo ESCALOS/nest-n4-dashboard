@@ -141,27 +141,21 @@ export class ContainersMonitoringService {
             voyage,
             loading: {
                 start: this.formatOperationTime(timeline.loading.started_at),
-                end: loadPending === 0 && loadTotal > 0
-                    ? this.formatOperationTime(timeline.loading.ended_at)
-                    : '-',
+                end: this.formatOperationTime(timeline.loading.ended_at),
                 total_movements: loadTotal,
                 current_movements: loadCurrent,
                 pending_movements: loadPending,
             },
             discharge: {
                 start: this.formatOperationTime(timeline.discharge.started_at),
-                end: dischargePending === 0 && dischargeTotal > 0
-                    ? this.formatOperationTime(timeline.discharge.ended_at)
-                    : '-',
+                end: this.formatOperationTime(timeline.discharge.ended_at),
                 total_movements: dischargeTotal,
                 current_movements: dischargeCurrent,
                 pending_movements: dischargePending,
             },
             restow: {
                 start: this.formatOperationTime(timeline.restow.started_at),
-                end: restowPending === 0 && restowTotal > 0
-                    ? this.formatOperationTime(timeline.restow.ended_at)
-                    : '-',
+                end: this.formatOperationTime(timeline.restow.ended_at),
                 total_movements: restowTotal,
                 current_movements: restowCurrent,
                 pending_movements: restowPending,
@@ -393,24 +387,18 @@ export class ContainersMonitoringService {
             timeline.discharge,
             this.findTimelineResult(results, 'DISCHARGE'),
             data.summary.discharge.total,
-            data.summary.discharge.to_discharge + data.summary.discharge.discharging,
         );
 
         this.upsertTimelineEntry(
             timeline.loading,
             this.findTimelineResult(results, 'LOAD'),
             data.summary.load.total,
-            data.summary.load.not_arrived
-            + data.summary.load.not_arrived_in_transit
-            + data.summary.load.to_load
-            + data.summary.load.loading,
         );
 
         this.upsertTimelineEntry(
             timeline.restow,
             this.findTimelineResult(results, 'RESTOW'),
             data.summary.restow.total,
-            data.summary.restow.pending,
         );
 
         await this.redisService.setJson(CACHE_KEYS.containerOperationTimeline(manifestId), timeline);
@@ -428,7 +416,6 @@ export class ContainersMonitoringService {
         entry: TimelineOperationCache,
         dbValue: ContainerOperationTimelineResult | undefined,
         total: number,
-        pending: number,
     ): void {
         const startIso = dbValue?.start_time ? new Date(dbValue.start_time).toISOString() : null;
         const endIso = dbValue?.end_time ? new Date(dbValue.end_time).toISOString() : null;
@@ -437,10 +424,8 @@ export class ContainersMonitoringService {
             entry.started_at = startIso;
         }
 
-        if (total > 0 && pending === 0) {
-            if (!entry.ended_at && endIso) {
-                entry.ended_at = endIso;
-            }
+        if (!entry.ended_at && total > 0 && endIso) {
+            entry.ended_at = endIso;
         } else {
             entry.ended_at = null;
         }
