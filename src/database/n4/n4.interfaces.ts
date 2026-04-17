@@ -219,6 +219,7 @@ export interface PendingAppointmentResult {
     Cliente: string;
     Tecnologia: string;
     Contenedor: string;
+    PuertoDescarga: string;
     VesselVisitGkey: number | null;
     Tipo: string;
 }

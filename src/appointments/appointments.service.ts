@@ -378,6 +378,7 @@ export class AppointmentsService {
       tecnologia: r.Tecnologia,
       producto: orderInfo.producto,
       contenedor: r.Contenedor,
+      puertoDescarga: r.PuertoDescarga,
       nave: vesselName,
       tipo: r.Tipo,
       estado: this.calculateEstado(r.Fecha),

@@ -677,18 +677,17 @@ export const N4Queries = {
             WHEN 'DOM' THEN 'Devolución'
             WHEN 'PUE' THEN 'Retiro Full'
             ELSE 'Otro'
-        END AS Tipo
+        END AS Tipo,
+        pod.id AS PuertoDescarga
     FROM road_gate_appointment appt
-
     LEFT JOIN road_appt_time_slot slot
         ON slot.gkey = appt.time_slot_gkey
-
     LEFT JOIN inv_unit unit
         ON unit.gkey = appt.unit_gkey
-
     LEFT JOIN ref_bizunit_scoped shipper
         ON shipper.gkey = appt.shipper_gkey
-
+    LEFT JOIN ref_routing_point pod
+        ON pod.gkey = unit.pod1_gkey
     WHERE appt.state = 'CREATED'
     AND appt.gate_gkey = 53;
     `,

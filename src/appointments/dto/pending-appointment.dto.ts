@@ -11,6 +11,7 @@ export class PendingAppointmentDto {
     tecnologia: string;
     producto: string;
     contenedor: string;
+    puertoDescarga: string;
     nave: string;
     tipo: string;
     estado: AppointmentEstado;
