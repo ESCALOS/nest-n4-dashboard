@@ -6,6 +6,7 @@ export class StockpilingTicketDto {
     pesoIngreso: number;
     pesoSalida: number;
     pesoNeto: number;
+    bultos: number;
     tracto: string;
     carreta: string;
     conductor: string;

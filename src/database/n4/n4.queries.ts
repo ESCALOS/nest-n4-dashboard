@@ -443,6 +443,7 @@ export const N4Queries = {
         ISNULL(rtt.scale_weight, 0) AS pesoIngreso,
         ISNULL(rtt.truck_tare_weight, 0) AS pesoSalida,
         ISNULL(rtt.scale_weight, 0) - ISNULL(rtt.truck_tare_weight, 0) AS pesoNeto,
+        ISNULL(TRY_CAST(iu.flex_string09 AS INT), 0) AS bultos,
         ISNULL(truc.truck_id, '') AS tracto,
         ISNULL(rtt.chs_id, '') AS carreta,
         ISNULL(truc.driver_name, '') AS conductor,

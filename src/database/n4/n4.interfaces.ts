@@ -78,6 +78,7 @@ export interface StockpilingTicket {
     pesoIngreso: number;
     pesoSalida: number;
     pesoNeto: number;
+    bultos: number;
     tracto: string;
     carreta: string;
     conductor: string;
