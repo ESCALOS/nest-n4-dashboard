@@ -72,6 +72,7 @@ export interface TransactionResult {
 
 export interface StockpilingTicket {
     codigo: string;
+    blNbr: string;
     blItemGkey: number;
     gRemision: string;
     gTransportista: string;
@@ -86,6 +87,10 @@ export interface StockpilingTicket {
     notas: string;
     rucTransportista: string;
     bodega: string;
+    balanzaIngreso: string;
+    balanceroIngreso: string;
+    balanzaSalida: string;
+    balanceroSalida: string;
 }
 
 export interface IndirectShipmentTicket {

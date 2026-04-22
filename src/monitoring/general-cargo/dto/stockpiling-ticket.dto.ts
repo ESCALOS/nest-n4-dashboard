@@ -1,5 +1,6 @@
 export class StockpilingTicketDto {
     codigo: string;
+    blNbr: string;
     blItemNbr: string;
     gRemision: string;
     gTransportista: string;
@@ -11,6 +12,11 @@ export class StockpilingTicketDto {
     carreta: string;
     conductor: string;
     fechaSalida: string;
+    notas: string;
     rucTransportista: string;
     bodega: string;
+    balanzaIngreso: string;
+    balanceroIngreso: string;
+    balanzaSalida: string;
+    balanceroSalida: string;
 }

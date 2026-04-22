@@ -437,6 +437,7 @@ export const N4Queries = {
     getStockpilingTickets: `
     SELECT
         rtt.nbr AS codigo,
+        rtt.bl_nbr AS blNbr,
         rtt.bl_item_gkey AS blItemGkey,
         rtt.flex_string20 AS gRemision,
         rtt.flex_string21 AS gTransportista,
@@ -450,12 +451,18 @@ export const N4Queries = {
         ISNULL(CONVERT(VARCHAR, stg.fechaSalida, 120), '') AS fechaSalida,
         ISNULL(rtt.notes, '') AS notas,
         ISNULL(rtt.trkco_id, '') AS rucTransportista,
-        ISNULL(iu.flex_string12, 'SIN BODEGA') AS bodega
+        ISNULL(iu.flex_string12, 'SIN BODEGA') AS bodega,
+        ISNULL(rtt.tran_flex_string01, 'SIN BALANZA DE INGRESO') AS balanzaIngreso,
+        ISNULL(stg.balanceroIngreso, 'SIN BALANCERO') AS balanceroIngreso,
+        ISNULL(rtt.tran_flex_string02, 'SIN BALANZA DE SALIDA') AS balanzaSalida,
+        ISNULL(stg.balanceroSalida, 'SIN BALANCERO') AS balanceroSalida
     FROM road_truck_transactions rtt
     LEFT JOIN road_truck_visit_details truc ON truc.tvdtls_gkey = rtt.truck_visit_gkey
     LEFT JOIN inv_unit iu ON iu.gkey = rtt.unit_gkey
     OUTER APPLY (
         SELECT
+            MAX(CASE WHEN s.id = 'gate_in' THEN COALESCE(s.creator, s.changer) END) AS balanceroIngreso,
+            MAX(CASE WHEN s.id = 'gate_out' THEN COALESCE(s.creator, s.changer) END) AS balanceroSalida,
             MAX(CASE WHEN s.id = 'gate_out' THEN s.stage_end END) AS fechaSalida
         FROM road_truck_transaction_stages s
         WHERE s.tran_gkey = rtt.gkey
