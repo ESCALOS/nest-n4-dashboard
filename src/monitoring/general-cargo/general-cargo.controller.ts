@@ -39,25 +39,24 @@ export class GeneralCargoController {
    * SSE endpoint — the frontend subscribes here to receive
    * MonitoringGeneralCargoResponse every time data is refreshed.
    *
-   * GET /monitoring/general-cargo/stream?manifest_id=XXX&operation_type=STOCKPILING
+   * GET /monitoring/general-cargo/stream?manifest_id=XXX&operation=STOCKPILING
    */
   @Public()
   @UseGuards(SseOneTimeTokenGuard)
   @Sse('stream')
   stream(
-    @Query(new ValidationPipe({ transform: true }))
-    query: OperationVesselRequestDto,
+    @Query('manifest_id') manifest_id: string,
+    @Query('operation') operation: string,
   ): Observable<MessageEvent> {
-    const { manifest_id, operation_type } = query;
     this.logger.log(
-      `SSE connection opened — manifest: ${manifest_id}, type: ${operation_type}`,
+      `SSE connection opened — manifest: ${manifest_id}, type: ${operation}`,
     );
 
     // Emit immediately, then on every refresh signal
     const data$ = this.eventService.refresh$.pipe(
       startWith(undefined),
       switchMap(() =>
-        this.fetchData(manifest_id, operation_type),
+        this.fetchData(manifest_id, operation),
       ),
       map((response) => ({
         data: response,
@@ -74,7 +73,7 @@ export class GeneralCargoController {
     return merge(data$, heartbeat$).pipe(
       finalize(() =>
         this.logger.log(
-          `SSE connection closed — manifest: ${manifest_id}, type: ${operation_type}`,
+          `SSE connection closed — manifest: ${manifest_id}, type: ${operation}`,
         ),
       ),
     );
