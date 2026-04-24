@@ -8,6 +8,7 @@ import {
   Sse,
   Logger,
   ValidationPipe,
+  UseGuards,
 } from '@nestjs/common';
 import { Observable, switchMap, startWith, map, finalize, interval, merge } from 'rxjs';
 import { GeneralCargoService } from './general-cargo.service';
@@ -15,6 +16,8 @@ import { GeneralCargoEventService } from './general-cargo-event.service';
 import { OperationVesselRequestDto } from './dto/operation-vessel-request.dto';
 import { MonitoringGeneralCargoResponse } from './dto/operation-vessel-response.dto';
 import { SaveSspPermissionClassificationsDto } from './dto/save-ssp-permission-classifications.dto';
+import { Public } from '../../auth/decorators/public.decorator';
+import { SseOneTimeTokenGuard } from '../../auth/guards/sse-one-time-token.guard';
 
 interface MessageEvent {
   data: string | object;
@@ -38,6 +41,8 @@ export class GeneralCargoController {
    *
    * GET /monitoring/general-cargo/stream?manifest_id=XXX&operation_type=STOCKPILING
    */
+  @Public()
+  @UseGuards(SseOneTimeTokenGuard)
   @Sse('stream')
   stream(
     @Query(new ValidationPipe({ transform: true }))
@@ -81,6 +86,8 @@ export class GeneralCargoController {
    *
    * GET /monitoring/general-cargo/operations/stream
    */
+  @Public()
+  @UseGuards(SseOneTimeTokenGuard)
   @Sse('operations/stream')
   operationsStream(): Observable<MessageEvent> {
     this.logger.log('SSE operations connection opened');

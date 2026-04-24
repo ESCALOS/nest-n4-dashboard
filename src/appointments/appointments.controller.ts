@@ -1,4 +1,4 @@
-import { Controller, Get, Sse, Logger, Param } from '@nestjs/common';
+import { Controller, Get, Sse, Logger, Param, UseGuards } from '@nestjs/common';
 import { Observable, switchMap, startWith, finalize, interval, map, merge } from 'rxjs';
 import { AppointmentsService } from './appointments.service';
 import { AppointmentsEventService } from './appointments-event.service';
@@ -8,6 +8,8 @@ import {
   AppointmentEirPrintDataDto,
   GetEirPrintDataDto,
 } from './dto/get-eir-print-data.dto';
+import { Public } from '../auth/decorators/public.decorator';
+import { SseOneTimeTokenGuard } from '../auth/guards/sse-one-time-token.guard';
 
 interface MessageEvent {
   data: string | object;
@@ -72,6 +74,8 @@ export class AppointmentsController {
    *
    * GET /appointments/in-progress/stream
    */
+  @Public()
+  @UseGuards(SseOneTimeTokenGuard)
   @Sse('in-progress/stream')
   stream(): Observable<MessageEvent> {
     this.logger.log('SSE connection opened — appointments in progress');
@@ -113,6 +117,8 @@ export class AppointmentsController {
    * SSE endpoint — general cargo appointments in progress
    * GET /appointments/in-progress/general-cargo/stream
    */
+  @Public()
+  @UseGuards(SseOneTimeTokenGuard)
   @Sse('in-progress/general-cargo/stream')
   generalCargoStream(): Observable<MessageEvent> {
     this.logger.log('SSE connection opened — general cargo appointments in progress');
@@ -168,6 +174,8 @@ export class AppointmentsController {
    *
    * GET /appointments/pending/stream
    */
+  @Public()
+  @UseGuards(SseOneTimeTokenGuard)
   @Sse('pending/stream')
   pendingStream(): Observable<MessageEvent> {
     this.logger.log('SSE connection opened — pending appointments');

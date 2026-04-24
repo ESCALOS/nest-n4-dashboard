@@ -5,6 +5,7 @@ import { ExtractJwt, Strategy, StrategyOptionsWithRequest } from 'passport-jwt';
 import { Request } from 'express';
 import { RedisService } from '../../database/redis/redis.service';
 import { JwtPayload, ActiveUser } from '../interfaces/jwt-payload.interface';
+import { CACHE_KEYS } from '../../common/constants/cache-keys.constant';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
@@ -29,9 +30,13 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
             ExtractJwt.fromAuthHeaderAsBearerToken()(req as any) ||
             ExtractJwt.fromUrlQueryParameter('token')(req as any);
 
+        if (!token) {
+            throw new UnauthorizedException('Token not found');
+        }
+
         // Check if token is blacklisted in Redis
         const isBlacklisted = await this.redisService.exists(
-            `bl:${token}`,
+            CACHE_KEYS.tokenBlacklist(token),
         );
 
         if (isBlacklisted) {

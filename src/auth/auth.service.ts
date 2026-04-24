@@ -6,15 +6,17 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as argon2 from 'argon2';
-import { randomBytes, createHash } from 'crypto';
+import { randomBytes, createHash, randomUUID } from 'crypto';
 import { PrismaService } from '../database/prisma/prisma.service';
 import { RedisService } from '../database/redis/redis.service';
 import { JwtPayload } from './interfaces/jwt-payload.interface';
 import { LoginDto } from './dto';
+import { CACHE_KEYS } from '../common/constants/cache-keys.constant';
 
 @Injectable()
 export class AuthService {
     private readonly logger = new Logger(AuthService.name);
+    private readonly sseTokenTtlSeconds = 30;
 
     constructor(
         private readonly prisma: PrismaService,
@@ -107,7 +109,7 @@ export class AuthService {
         if (decoded?.exp) {
             const ttl = decoded.exp - Math.floor(Date.now() / 1000);
             if (ttl > 0) {
-                await this.redisService.set(`bl:${accessToken}`, '1', ttl);
+                await this.redisService.set(CACHE_KEYS.tokenBlacklist(accessToken), '1', ttl);
             }
         }
 
@@ -118,6 +120,28 @@ export class AuthService {
         });
 
         this.logger.log(`User ${userId} logged out`);
+    }
+
+    async createSseOneTimeToken(userId: string): Promise<{ token: string; ttlSeconds: number }> {
+        const token = randomUUID();
+        const key = CACHE_KEYS.sseOneTimeToken(token);
+
+        await this.redisService.set(
+            key,
+            JSON.stringify({ userId, createdAt: Date.now() }),
+            this.sseTokenTtlSeconds,
+        );
+
+        return {
+            token,
+            ttlSeconds: this.sseTokenTtlSeconds,
+        };
+    }
+
+    async consumeSseOneTimeToken(token: string): Promise<boolean> {
+        const key = CACHE_KEYS.sseOneTimeToken(token);
+        const value = await this.redisService.getClient().call('GETDEL', key);
+        return typeof value === 'string' && value.length > 0;
     }
 
     async changePassword(userId: string, currentPassword: string, newPassword: string) {

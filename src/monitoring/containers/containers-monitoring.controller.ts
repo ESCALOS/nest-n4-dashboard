@@ -8,12 +8,15 @@ import {
     Sse,
     Logger,
     ValidationPipe,
+    UseGuards,
 } from '@nestjs/common';
 import { Observable, switchMap, startWith, map, finalize, interval, merge } from 'rxjs';
 import { ContainersMonitoringService } from './containers-monitoring.service';
 import { ContainersEventService } from './containers-event.service';
 import { GetContainerMonitoringQueryDto } from './dto/get-container-monitoring-query.dto';
 import { ContainerMonitoringDataDto } from './dto/container-monitoring-response.dto';
+import { Public } from '../../auth/decorators/public.decorator';
+import { SseOneTimeTokenGuard } from '../../auth/guards/sse-one-time-token.guard';
 
 
 interface MessageEvent {
@@ -40,6 +43,8 @@ export class ContainersMonitoringController {
      * SSE — stream container monitoring data for a specific manifest.
      * GET /monitoring/containers/stream?manifest_id=XXX
      */
+    @Public()
+    @UseGuards(SseOneTimeTokenGuard)
     @Sse('stream')
     stream(
         @Query(new ValidationPipe({ transform: true }))
@@ -72,6 +77,8 @@ export class ContainersMonitoringController {
      * SSE — stream the list of monitored container vessels.
      * GET /monitoring/containers/vessels/stream
      */
+    @Public()
+    @UseGuards(SseOneTimeTokenGuard)
     @Sse('vessels/stream')
     vesselsStream(): Observable<MessageEvent> {
         this.logger.log('SSE container vessels connection opened');

@@ -2,6 +2,10 @@
  * Redis cache key patterns
  */
 export const CACHE_KEYS = {
+  // Auth keys
+  tokenBlacklist: (token: string) => `auth:blacklist:${token}`,
+  sseOneTimeToken: (token: string) => `auth:sse:ott:${token}`,
+
   manifest: (manifestId: string) => `manifest:${manifestId}`,
   // Monitoring General Cargo keys
   vesselOperations: (manifestId: string, operationType: string) => `monitoring:general-cargo:operation-vessel:${manifestId}:${operationType}`,
