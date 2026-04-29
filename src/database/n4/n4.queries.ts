@@ -284,7 +284,7 @@ export const N4Queries = {
         calc.shift,
         COUNT(*) AS total_tickets,
         SUM(ISNULL(TRY_CAST(iu.flex_string09 AS INT), 0)) AS total_goods,
-        SUM(ISNULL(rtt.ctr_gross_weight, 0)) AS total_weight
+        SUM(ISNULL(rtt.scale_weight, 0) - ISNULL(rtt.truck_tare_weight, 0)) AS total_weight
     FROM road_truck_transactions rtt
     LEFT JOIN inv_unit iu 
         ON iu.gkey = rtt.unit_gkey
