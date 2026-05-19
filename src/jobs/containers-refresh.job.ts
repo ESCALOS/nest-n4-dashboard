@@ -14,9 +14,9 @@ export class ContainersRefreshJob {
     ) { }
 
     /**
-     * Refresh container monitoring data for all monitored vessels every 30 seconds
+     * Refresh container monitoring data for all monitored vessels every 10 seconds
      */
-    @Cron(CronExpression.EVERY_30_SECONDS)
+    @Cron(CronExpression.EVERY_10_SECONDS)
     async refreshContainers() {
         if (this.isRunning) {
             this.logger.warn(

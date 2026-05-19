@@ -14,9 +14,9 @@ export class TransactionRefreshJob {
   ) { }
 
   /**
-   * Refresh transactions for all active manifests every 30 seconds
+   * Refresh transactions for all active manifests every 10 seconds
    */
-  @Cron(CronExpression.EVERY_30_SECONDS)
+  @Cron(CronExpression.EVERY_10_SECONDS)
   async refreshTransactions() {
     if (this.isRunning) {
       this.logger.warn(
