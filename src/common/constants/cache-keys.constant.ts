@@ -23,12 +23,14 @@ export const CACHE_KEYS = {
 
   // Container monitoring keys
   containerMonitoredVessels: 'monitoring:containers:monitored-vessels',
-  containerData: (manifestId: string) =>
-    `monitoring:containers:data:${manifestId}`,
-  containerPlannedPositions: (manifestId: string) =>
-    `monitoring:containers:planned-positions:${manifestId}`,
-  containerOperationTimeline: (manifestId: string) =>
-    `monitoring:containers:operation-timeline:${manifestId}`,
+  containerManifest: (carrierVisitGkey: number | string) =>
+    `manifest:container:${carrierVisitGkey}`,
+  containerData: (carrierVisitGkey: number | string) =>
+    `monitoring:containers:data:${carrierVisitGkey}`,
+  containerPlannedPositions: (carrierVisitGkey: number | string) =>
+    `monitoring:containers:planned-positions:${carrierVisitGkey}`,
+  containerOperationTimeline: (carrierVisitGkey: number | string) =>
+    `monitoring:containers:operation-timeline:${carrierVisitGkey}`,
 
   // Appointments module keys
   appointmentsInProgress: 'appointments:in-progress',

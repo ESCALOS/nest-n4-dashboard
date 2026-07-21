@@ -42,10 +42,10 @@ export class ContainersRefreshJob {
 
             for (const vessel of vessels) {
                 try {
-                    await this.containersService.refreshAndCache(vessel.id);
+                    await this.containersService.refreshAndCache(vessel.gkey);
                 } catch (error) {
                     this.logger.error(
-                        `Failed to refresh container data for manifest ${vessel.id}`,
+                        `Failed to refresh container data for visit gkey ${vessel.gkey}`,
                         error,
                     );
                 }

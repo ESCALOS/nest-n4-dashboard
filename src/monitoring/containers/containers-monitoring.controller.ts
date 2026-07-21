@@ -13,7 +13,7 @@ import {
 import { Observable, switchMap, startWith, map, finalize, interval, merge } from 'rxjs';
 import { ContainersMonitoringService } from './containers-monitoring.service';
 import { ContainersEventService } from './containers-event.service';
-import { GetContainerMonitoringQueryDto } from './dto/get-container-monitoring-query.dto';
+import { GetContainerByGkeyQueryDto, GetContainerMonitoringQueryDto } from './dto/get-container-monitoring-query.dto';
 import { ContainerMonitoringDataDto } from './dto/container-monitoring-response.dto';
 import { Public } from '../../auth/decorators/public.decorator';
 import { SseOneTimeTokenGuard } from '../../auth/guards/sse-one-time-token.guard';
@@ -41,21 +41,21 @@ export class ContainersMonitoringController {
 
     /**
      * SSE — stream container monitoring data for a specific manifest.
-     * GET /monitoring/containers/stream?manifest_id=XXX
+     * GET /monitoring/containers/stream?carrier_visit_gkey=123
      */
     @Public()
     @UseGuards(SseOneTimeTokenGuard)
     @Sse('stream')
     stream(
         @Query(new ValidationPipe({ transform: true }))
-        query: GetContainerMonitoringQueryDto,
+        query: GetContainerByGkeyQueryDto,
     ): Observable<MessageEvent> {
-        const { manifest_id } = query;
-        this.logger.log(`SSE connection opened — containers manifest: ${manifest_id}`);
+        const { carrier_visit_gkey } = query;
+        this.logger.log(`SSE connection opened for container visit ${carrier_visit_gkey}`);
 
         const data$ = this.eventService.refresh$.pipe(
             startWith(undefined),
-            switchMap(() => this.fetchData(manifest_id)),
+            switchMap(() => this.fetchData(carrier_visit_gkey)),
             map((response) => ({ data: response })),
         );
 
@@ -68,7 +68,7 @@ export class ContainersMonitoringController {
 
         return merge(data$, heartbeat$).pipe(
             finalize(() =>
-                this.logger.log(`SSE connection closed — containers manifest: ${manifest_id}`),
+                this.logger.log(`SSE connection closed for container visit ${carrier_visit_gkey}`),
             ),
         );
     }
@@ -157,27 +157,38 @@ export class ContainersMonitoringController {
 
     /**
      * Get container operations report data for Excel export.
-     * GET /monitoring/containers/export-data?manifest_id=XXX
+     * GET /monitoring/containers/export-data?carrier_visit_gkey=123
      */
     @Get('export-data')
     async getExportData(
         @Query(new ValidationPipe({ transform: true }))
-        query: GetContainerMonitoringQueryDto,
+        query: GetContainerByGkeyQueryDto,
     ) {
-        const data = await this.containersMonitoringService.getOperationsReport(query.manifest_id);
+        const data = await this.containersMonitoringService.getOperationsReport(query.carrier_visit_gkey);
         return { success: true, data };
     }
 
     /**
      * Get not-arrived containers enriched with booking metadata.
-     * GET /monitoring/containers/not-arrived?manifest_id=XXX
+     * GET /monitoring/containers/not-arrived?carrier_visit_gkey=123
      */
     @Get('not-arrived')
     async getNotArrived(
         @Query(new ValidationPipe({ transform: true }))
-        query: GetContainerMonitoringQueryDto,
+        query: GetContainerByGkeyQueryDto,
     ) {
-        const data = await this.containersMonitoringService.getNotArrivedContainers(query.manifest_id);
+        const data = await this.containersMonitoringService.getNotArrivedContainers(query.carrier_visit_gkey);
+        return { success: true, data };
+    }
+
+    @Get('booking-export-data')
+    async getBookingExportData(
+        @Query(new ValidationPipe({ transform: true }))
+        query: GetContainerByGkeyQueryDto,
+    ) {
+        const data = await this.containersMonitoringService.getBookingExport(
+            query.carrier_visit_gkey,
+        );
         return { success: true, data };
     }
 
@@ -188,13 +199,13 @@ export class ContainersMonitoringController {
     @Delete('vessels')
     async removeVessel(
         @Body(new ValidationPipe({ transform: true }))
-        body: GetContainerMonitoringQueryDto,
+        body: GetContainerByGkeyQueryDto,
     ): Promise<{ success: boolean; message: string }> {
-        await this.containersMonitoringService.removeMonitoredVessel(body.manifest_id);
+        await this.containersMonitoringService.removeMonitoredVessel(body.carrier_visit_gkey);
         this.eventService.notifyVesselsChanged();
         return {
             success: true,
-            message: `Vessel ${body.manifest_id} removed from container monitoring`,
+            message: `Vessel gkey ${body.carrier_visit_gkey} removed from container monitoring`,
         };
     }
 
@@ -202,21 +213,21 @@ export class ContainersMonitoringController {
     // INTERNAL
     // ============================================
 
-    private fetchData(manifestId: string): Observable<ContainerMonitoringDataDto> {
+    private fetchData(carrierVisitGkey: number): Observable<ContainerMonitoringDataDto> {
         return new Observable((subscriber) => {
             this.containersMonitoringService
-                .getMonitoringData(manifestId)
+                .getMonitoringData(carrierVisitGkey)
                 .then((data) => {
                     subscriber.next(data);
                     subscriber.complete();
                 })
                 .catch((error) => {
                     this.logger.error(
-                        `Error fetching container data for ${manifestId}: ${error.message}`,
+                        `Error fetching container data for gkey ${carrierVisitGkey}: ${error.message}`,
                         error.stack,
                     );
                     subscriber.next({
-                        manifest: { id: manifestId, gkey: 0, vessel_name: 'Error' },
+                        manifest: { id: 'N.E.', gkey: carrierVisitGkey, vessel_name: 'Error' },
                         summary: {
                             total_units: 0,
                             discharge: { to_discharge: 0, discharging: 0, discharged: 0, total: 0 },

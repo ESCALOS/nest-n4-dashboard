@@ -46,6 +46,11 @@ class EnvironmentVariables {
   @IsOptional()
   REDIS_PASSWORD?: string;
 
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  REDIS_DB: number = 0;
+
   // Job Intervals
   @IsNumber()
   @Min(1000)

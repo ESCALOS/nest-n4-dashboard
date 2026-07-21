@@ -272,3 +272,25 @@ export interface ContainerOperationTimelineResult {
     start_time: Date | null;
     end_time: Date | null;
 }
+
+export interface ContainerBookingExportResult {
+    line: string | null;
+    manifest: string;
+    vessel: string;
+    poo: string;
+    pol: string;
+    pod: string | null;
+    fds: string | null;
+    appointment: string | null;
+    booking: string;
+    container_number: string | null;
+    iso_code: string | null;
+    type: string | null;
+    total: number | null;
+    status: 'CLIENT' | 'FULL' | 'EMPTY';
+    status2: 'ATENDIDO' | 'PENDIENTE';
+    commodity: string | null;
+    temperature: string | number | null;
+    reefer_technology: string | null;
+    shipper: string | null;
+}

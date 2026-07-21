@@ -18,11 +18,13 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     const host = this.configService.get<string>('redis.host');
     const port = this.configService.get<number>('redis.port');
     const password = this.configService.get<string>('redis.password');
+    const db = this.configService.get<number>('redis.db', 0);
 
     this.client = new Redis({
       host,
       port,
       password: password || undefined,
+      db,
       retryStrategy: (times) => {
         const delay = Math.min(times * 50, 2000);
         return delay;

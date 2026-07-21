@@ -29,6 +29,7 @@ import {
   WorkingVesselResult,
   HoldAlertUnitResult,
   PendingAppointmentResult,
+  ContainerBookingExportResult,
 } from './n4.interfaces';
 
 @Injectable()
@@ -138,6 +139,42 @@ export class N4Service implements OnModuleInit, OnModuleDestroy {
       return result.recordset[0] || null;
     } catch (error) {
       this.logger.error(`Error getting container manifest ${manifestId}`, error);
+      throw error;
+    }
+  }
+
+  async getContainerManifestByGkey(
+    carrierVisitGkey: number,
+  ): Promise<ContainerManifestResult | null> {
+    try {
+      const request = this.pool.request();
+      request.input('carrierVisitGkey', sql.BigInt, carrierVisitGkey);
+      const result = await this.executeQuery<ContainerManifestResult>(
+        request,
+        N4Queries.getContainerManifestByGkey,
+        'getContainerManifestByGkey',
+      );
+      return result.recordset[0] || null;
+    } catch (error) {
+      this.logger.error(`Error getting container manifest gkey ${carrierVisitGkey}`, error);
+      throw error;
+    }
+  }
+
+  async getContainerBookingExport(
+    carrierVisitGkey: number,
+  ): Promise<ContainerBookingExportResult[]> {
+    try {
+      const request = this.pool.request();
+      request.input('carrierVisitGkey', sql.BigInt, carrierVisitGkey);
+      const result = await this.executeQuery<ContainerBookingExportResult>(
+        request,
+        N4Queries.getContainerBookingExport,
+        'getContainerBookingExport',
+      );
+      return result.recordset;
+    } catch (error) {
+      this.logger.error(`Error getting booking export for visit ${carrierVisitGkey}`, error);
       throw error;
     }
   }

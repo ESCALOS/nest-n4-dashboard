@@ -14,6 +14,7 @@ import {
 } from './dto/container-monitoring-response.dto';
 import { ContainerOperationsReportDto } from './dto/container-operations-report.dto';
 import { ContainerNotArrivedItemDto } from './dto/container-not-arrived.dto';
+import { ContainerBookingExportItemDto } from './dto/container-booking-export.dto';
 
 export interface ContainerManifestInfo {
     id: string;
@@ -50,42 +51,45 @@ export class ContainersMonitoringService {
 
     async addMonitoredVessel(manifestId: string): Promise<ContainerManifestInfo> {
         const manifest = await this.validateAndGetManifest(manifestId);
-        await this.redisService.sadd(CACHE_KEYS.containerMonitoredVessels, manifestId);
+        await this.redisService.sadd(CACHE_KEYS.containerMonitoredVessels, String(manifest.gkey));
 
         // First load: full query with OUTER APPLY to populate planned positions cache
-        await this.fullLoadAndCache(manifestId, manifest);
+        await this.fullLoadAndCache(manifest.gkey, manifest);
 
         this.logger.log(`Added container monitored vessel: ${manifestId} (${manifest.vessel_name})`);
         return manifest;
     }
 
-    async removeMonitoredVessel(manifestId: string): Promise<void> {
-        await this.redisService.srem(CACHE_KEYS.containerMonitoredVessels, manifestId);
+    async removeMonitoredVessel(carrierVisitGkey: number): Promise<void> {
+        const key = String(carrierVisitGkey);
+        await this.redisService.srem(CACHE_KEYS.containerMonitoredVessels, key);
 
         // Clean up cached data
         await Promise.all([
-            this.redisService.del(CACHE_KEYS.containerData(manifestId)),
-            this.redisService.del(CACHE_KEYS.containerPlannedPositions(manifestId)),
-            this.redisService.del(CACHE_KEYS.containerOperationTimeline(manifestId)),
+            this.redisService.del(CACHE_KEYS.containerData(key)),
+            this.redisService.del(CACHE_KEYS.containerPlannedPositions(key)),
+            this.redisService.del(CACHE_KEYS.containerOperationTimeline(key)),
+            this.redisService.del(CACHE_KEYS.containerManifest(key)),
         ]);
 
-        this.logger.log(`Removed container monitored vessel: ${manifestId}`);
+        this.logger.log(`Removed container monitored vessel gkey: ${carrierVisitGkey}`);
     }
 
     async getMonitoredVessels(): Promise<ContainerManifestInfo[]> {
-        const members = await this.redisService.smembers(CACHE_KEYS.containerMonitoredVessels);
+        const members = await this.migrateLegacyMonitoredVessels();
 
         const results = await Promise.all(
-            members.map(async (manifestId) => {
+            members.map(async (member) => {
                 try {
-                    return await this.getManifestInfo(manifestId);
+                    return await this.getManifestInfo(Number(member));
                 } catch {
-                    return { id: manifestId, gkey: 0, vessel_name: 'Desconocido', voyage: null };
+                    await this.removeMonitoredVessel(Number(member));
+                    return null;
                 }
             }),
         );
 
-        return results;
+        return results.filter((item): item is ContainerManifestInfo => item !== null);
     }
 
     // ============================================
@@ -96,28 +100,36 @@ export class ContainersMonitoringService {
      * Get monitoring data from Redis cache (populated by job).
      * Falls back to full load if cache miss.
      */
-    async getMonitoringData(manifestId: string): Promise<ContainerMonitoringDataDto> {
-        const cached = await this.redisService.getJson<ContainerMonitoringDataDto>(
-            CACHE_KEYS.containerData(manifestId),
-        );
+    async getMonitoringData(carrierVisitGkey: number): Promise<ContainerMonitoringDataDto> {
+        const [cached, manifest] = await Promise.all([
+            this.redisService.getJson<ContainerMonitoringDataDto>(
+                CACHE_KEYS.containerData(carrierVisitGkey),
+            ),
+            this.getManifestInfo(carrierVisitGkey),
+        ]);
 
         if (cached) {
+            cached.manifest = {
+                id: manifest.id,
+                gkey: manifest.gkey,
+                vessel_name: manifest.vessel_name,
+            };
+            await this.redisService.setJson(CACHE_KEYS.containerData(carrierVisitGkey), cached);
             return cached;
         }
 
         // Cache miss — do a full load
-        const manifest = await this.validateAndGetManifest(manifestId);
-        return this.fullLoadAndCache(manifestId, manifest);
+        return this.fullLoadAndCache(carrierVisitGkey, manifest);
     }
 
-    async getOperationsReport(manifestId: string): Promise<ContainerOperationsReportDto> {
+    async getOperationsReport(carrierVisitGkey: number): Promise<ContainerOperationsReportDto> {
         const [manifest, monitoringData] = await Promise.all([
-            this.getManifestInfo(manifestId),
-            this.getMonitoringData(manifestId),
+            this.getManifestInfo(carrierVisitGkey),
+            this.getMonitoringData(carrierVisitGkey),
         ]);
 
         const voyage = manifest.voyage ?? '-';
-        const timeline = await this.getOrUpdateOperationTimeline(manifestId, manifest.gkey, monitoringData);
+        const timeline = await this.getOrUpdateOperationTimeline(carrierVisitGkey, monitoringData);
 
         const loadPending = monitoringData.summary.load.not_arrived
             + monitoringData.summary.load.not_arrived_in_transit
@@ -164,10 +176,10 @@ export class ContainersMonitoringService {
         };
     }
 
-    async getNotArrivedContainers(manifestId: string): Promise<ContainerNotArrivedItemDto[]> {
+    async getNotArrivedContainers(carrierVisitGkey: number): Promise<ContainerNotArrivedItemDto[]> {
         const [manifest, monitoringData] = await Promise.all([
-            this.getManifestInfo(manifestId),
-            this.getMonitoringData(manifestId),
+            this.getManifestInfo(carrierVisitGkey),
+            this.getMonitoringData(carrierVisitGkey),
         ]);
 
         const pendingStatuses = new Set<ContainerOperationStatus>([
@@ -210,11 +222,11 @@ export class ContainersMonitoringService {
      * Used on first add and on cache miss.
      */
     async fullLoadAndCache(
-        manifestId: string,
+        carrierVisitGkey: number,
         manifest?: ContainerManifestInfo,
     ): Promise<ContainerMonitoringDataDto> {
-        const info = manifest ?? await this.validateAndGetManifest(manifestId);
-        const rows = await this.n4Service.getContainerMonitoringFull(info.gkey);
+        const info = manifest ?? await this.getManifestInfo(carrierVisitGkey);
+        const rows = await this.n4Service.getContainerMonitoringFull(carrierVisitGkey);
 
         // Cache planned positions: Map<unit_gkey, pos_slot>
         const plannedPositions: Record<string, string> = {};
@@ -224,7 +236,7 @@ export class ContainersMonitoringService {
             }
         }
         await this.redisService.setJson(
-            CACHE_KEYS.containerPlannedPositions(manifestId),
+            CACHE_KEYS.containerPlannedPositions(carrierVisitGkey),
             plannedPositions,
         );
 
@@ -232,9 +244,9 @@ export class ContainersMonitoringService {
         const data = this.buildMonitoringData(rows, info);
 
         // Cache full response
-        await this.redisService.setJson(CACHE_KEYS.containerData(manifestId), data);
+        await this.redisService.setJson(CACHE_KEYS.containerData(carrierVisitGkey), data);
 
-        this.logger.debug(`Full load cached for ${manifestId}: ${rows.length} units`);
+        this.logger.debug(`Full load cached for gkey ${carrierVisitGkey}: ${rows.length} units`);
         return data;
     }
 
@@ -242,13 +254,13 @@ export class ContainersMonitoringService {
      * Refresh load: query WITHOUT OUTER APPLY → merge planned positions from cache → build & cache data.
      * Called by background job every 30s.
      */
-    async refreshAndCache(manifestId: string): Promise<ContainerMonitoringDataDto> {
-        const info = await this.getManifestInfo(manifestId);
-        const rows = await this.n4Service.getContainerMonitoringRefresh(info.gkey);
+    async refreshAndCache(carrierVisitGkey: number): Promise<ContainerMonitoringDataDto> {
+        const info = await this.getManifestInfo(carrierVisitGkey);
+        const rows = await this.n4Service.getContainerMonitoringRefresh(carrierVisitGkey);
 
         // Get cached planned positions
         const plannedPositions = await this.redisService.getJson<Record<string, string>>(
-            CACHE_KEYS.containerPlannedPositions(manifestId),
+            CACHE_KEYS.containerPlannedPositions(carrierVisitGkey),
         ) ?? {};
 
         // Check for new units that don't have cached planned positions
@@ -263,9 +275,9 @@ export class ContainersMonitoringService {
         // to get their planned positions (this handles late-arriving containers)
         if (newUnitGkeys.length > 0) {
             this.logger.debug(
-                `Found ${newUnitGkeys.length} new units without planned positions for ${manifestId}, doing full refresh`,
+                `Found ${newUnitGkeys.length} new units without planned positions for gkey ${carrierVisitGkey}, doing full refresh`,
             );
-            return this.fullLoadAndCache(manifestId, info);
+            return this.fullLoadAndCache(carrierVisitGkey, info);
         }
 
         // Merge planned_position into refresh rows
@@ -275,9 +287,9 @@ export class ContainersMonitoringService {
         }));
 
         const data = this.buildMonitoringData(fullRows, info);
-        await this.redisService.setJson(CACHE_KEYS.containerData(manifestId), data);
+        await this.redisService.setJson(CACHE_KEYS.containerData(carrierVisitGkey), data);
 
-        this.logger.debug(`Refresh cached for ${manifestId}: ${rows.length} units`);
+        this.logger.debug(`Refresh cached for gkey ${carrierVisitGkey}: ${rows.length} units`);
         return data;
     }
 
@@ -294,7 +306,7 @@ export class ContainersMonitoringService {
     // ============================================
 
     private async validateAndGetManifest(manifestId: string): Promise<ContainerManifestInfo> {
-        const manifest = await this.getCachedContainerManifest(manifestId);
+        const manifest = await this.n4Service.getContainerManifest(manifestId);
 
         if (!manifest) {
             throw new NotFoundException(`El manifiesto ${manifestId} no existe en N4`);
@@ -314,17 +326,19 @@ export class ContainersMonitoringService {
         };
     }
 
-    private async getManifestInfo(manifestId: string): Promise<ContainerManifestInfo> {
-        const manifest = await this.getCachedContainerManifest(manifestId);
+    private async getManifestInfo(carrierVisitGkey: number): Promise<ContainerManifestInfo> {
+        const manifest = await this.n4Service.getContainerManifestByGkey(carrierVisitGkey);
         if (!manifest) {
-            throw new NotFoundException(`El manifiesto ${manifestId} no existe en N4`);
+            throw new NotFoundException(`La visita ${carrierVisitGkey} no existe en N4`);
         }
-        return {
-            id: manifest.manifest_id ?? manifestId,
+        const info = {
+            id: manifest.manifest_id,
             gkey: manifest.gkey,
             vessel_name: manifest.vessel_name,
             voyage: manifest.voyage ?? null,
         };
+        await this.redisService.setJson(CACHE_KEYS.containerManifest(carrierVisitGkey), info);
+        return info;
     }
 
     /**
@@ -333,27 +347,78 @@ export class ContainersMonitoringService {
      * @param manifestId - The manifest ID to retrieve
      * @returns Container manifest info or null if not found
      */
-    private async getCachedContainerManifest(
-        manifestId: string,
-    ): Promise<any> {
-        const cacheKey = `manifest:container:${manifestId}`;
+    async getBookingExport(carrierVisitGkey: number): Promise<ContainerBookingExportItemDto[]> {
+        await this.getManifestInfo(carrierVisitGkey);
+        const rows = await this.n4Service.getContainerBookingExport(carrierVisitGkey);
 
-        // Try to get from Redis cache
-        const cached = await this.redisService.getJson<any>(cacheKey);
-        if (cached) {
-            this.logger.debug(`Cache hit for container manifest ${manifestId}`);
-            return cached;
+        return rows.map((row) => ({
+            line: row.line ?? '',
+            manifest: row.manifest ?? '',
+            vessel: row.vessel ?? '',
+            poo: row.poo,
+            pol: row.pol,
+            pod: row.pod ?? '',
+            fds: row.fds ?? '',
+            appointment: row.appointment ?? '',
+            booking: row.booking,
+            container_number: row.container_number ?? '',
+            iso_code: row.iso_code ?? '',
+            type: row.type ?? '',
+            total: Number(row.total ?? 0),
+            status: row.status,
+            status2: row.status2,
+            commodity: row.commodity ?? '',
+            temperature: row.temperature ?? '',
+            reefer_technology: row.reefer_technology ?? '',
+            shipper: row.shipper ?? '',
+        }));
+    }
+
+    /** Convert pre-gkey members and caches without requiring a manual Redis reset. */
+    private async migrateLegacyMonitoredVessels(): Promise<string[]> {
+        const members = await this.redisService.smembers(CACHE_KEYS.containerMonitoredVessels);
+
+        for (const member of members) {
+            if (/^\d+$/.test(member)) continue;
+
+            const legacyManifest = await this.redisService.getJson<any>(`manifest:container:${member}`);
+            let gkey = Number(legacyManifest?.gkey);
+
+            if (!Number.isSafeInteger(gkey) || gkey <= 0) {
+                try {
+                    gkey = (await this.n4Service.getContainerManifest(member))?.gkey ?? 0;
+                } catch {
+                    gkey = 0;
+                }
+            }
+
+            if (gkey > 0) {
+                const oldData = await this.redisService.getJson<ContainerMonitoringDataDto>(
+                    CACHE_KEYS.containerData(member),
+                );
+                const oldPositions = await this.redisService.getJson<Record<string, string>>(
+                    CACHE_KEYS.containerPlannedPositions(member),
+                );
+                const oldTimeline = await this.redisService.getJson<ContainerOperationTimelineCache>(
+                    CACHE_KEYS.containerOperationTimeline(member),
+                );
+
+                await this.redisService.sadd(CACHE_KEYS.containerMonitoredVessels, String(gkey));
+                if (oldData) await this.redisService.setJson(CACHE_KEYS.containerData(gkey), oldData);
+                if (oldPositions) await this.redisService.setJson(CACHE_KEYS.containerPlannedPositions(gkey), oldPositions);
+                if (oldTimeline) await this.redisService.setJson(CACHE_KEYS.containerOperationTimeline(gkey), oldTimeline);
+            }
+
+            await this.redisService.srem(CACHE_KEYS.containerMonitoredVessels, member);
+            await Promise.all([
+                this.redisService.del(CACHE_KEYS.containerData(member)),
+                this.redisService.del(CACHE_KEYS.containerPlannedPositions(member)),
+                this.redisService.del(CACHE_KEYS.containerOperationTimeline(member)),
+                this.redisService.del(`manifest:container:${member}`),
+            ]);
         }
 
-        // Get from N4 database
-        const manifest = await this.n4Service.getContainerManifest(manifestId);
-
-        // Cache indefinitely (no TTL) as manifest data is static
-        if (manifest) {
-            await this.redisService.setJson(cacheKey, manifest);
-        }
-
-        return manifest;
+        return this.redisService.smembers(CACHE_KEYS.containerMonitoredVessels);
     }
 
     private emptyTimelineCache(): ContainerOperationTimelineCache {
@@ -365,12 +430,11 @@ export class ContainersMonitoringService {
     }
 
     private async getOrUpdateOperationTimeline(
-        manifestId: string,
         carrierVisitGkey: number,
         data: ContainerMonitoringDataDto,
     ): Promise<ContainerOperationTimelineCache> {
         const cached = await this.redisService.getJson<ContainerOperationTimelineCache>(
-            CACHE_KEYS.containerOperationTimeline(manifestId),
+            CACHE_KEYS.containerOperationTimeline(carrierVisitGkey),
         );
 
         const timeline: ContainerOperationTimelineCache = {
@@ -401,7 +465,7 @@ export class ContainersMonitoringService {
             data.summary.restow.total,
         );
 
-        await this.redisService.setJson(CACHE_KEYS.containerOperationTimeline(manifestId), timeline);
+        await this.redisService.setJson(CACHE_KEYS.containerOperationTimeline(carrierVisitGkey), timeline);
         return timeline;
     }
 

@@ -39,6 +39,20 @@ export const N4Queries = {
         WHERE acv.id = @manifestId
     `,
 
+    getContainerManifestByGkey: `
+        SELECT
+                acv.gkey,
+                acv.id AS manifest_id,
+                vvvd.vvd_gkey,
+                vv.name AS vessel_name,
+                vvvd.flex_string01 AS cargo_type,
+                vvvd.ib_vyg AS voyage
+        FROM argo_carrier_visit acv
+        INNER JOIN vsl_vessel_visit_details vvvd ON vvvd.vvd_gkey = acv.cvcvd_gkey
+        INNER JOIN vsl_vessels vv ON vv.gkey = vvvd.vessel_gkey
+        WHERE acv.gkey = @carrierVisitGkey
+    `,
+
     /**
      * Get vessel mapping by carrier visit gkeys (batch)
      * Returns: carrier_visit_gkey, manifest_id, vessel_name, line_id, line_name
@@ -575,6 +589,101 @@ export const N4Queries = {
                 AND fcy.transit_state IN ('S20_INBOUND', 'S40_YARD', 'S60_LOADED', 'S70_DEPARTED')
             )
       )
+  `,
+
+    /** Booking fulfillment detail for the selected outbound vessel visit. */
+    getContainerBookingExport: `
+    SELECT
+        line.id AS line,
+        acv.id AS manifest,
+        vessel.name AS vessel,
+        'PEPIO' AS poo,
+        'PEPIO' AS pol,
+        pod.id AS pod,
+        pod2.id AS fds,
+        CASE WHEN appointment.start_date IS NULL THEN NULL
+             ELSE CONVERT(VARCHAR(10), appointment.start_date, 103) + ' '
+                + LEFT(CONVERT(VARCHAR(8), appointment.start_date, 108), 5)
+        END AS appointment,
+        booking.nbr AS booking,
+        unit.id AS container_number,
+        COALESCE(actual_type.id, requested_type.id) AS iso_code,
+        CASE
+            WHEN COALESCE(actual_type.id, requested_type.id) = '45RT'
+                 OR (LEFT(COALESCE(actual_type.id, requested_type.id), 2) IN ('42','43','45','48')
+                     AND SUBSTRING(COALESCE(actual_type.id, requested_type.id), 3, 1) IN ('3','R'))
+                THEN 'RH'
+            WHEN COALESCE(actual_type.nominal_length, requested_type.nominal_length) = 'NOM20'
+                THEN 'DV'
+            WHEN LEFT(COALESCE(actual_type.id, requested_type.id), 2) IN ('42','43','45','48')
+                THEN 'HC'
+            ELSE NULL
+        END AS type,
+        order_item.qty AS total,
+        CASE
+            WHEN unit.gkey IS NULL THEN 'EMPTY'
+            WHEN unit.category = 'STRGE' AND fcy.transit_state = 'S40_YARD' THEN 'EMPTY'
+            WHEN unit.category = 'STRGE' AND fcy.transit_state = 'S70_DEPARTED' THEN 'CLIENT'
+            WHEN unit.category = 'EXPRT' AND fcy.transit_state = 'S20_INBOUND' THEN 'CLIENT'
+            WHEN unit.category = 'EXPRT' AND fcy.transit_state IN ('S40_YARD','S70_DEPARTED') THEN 'FULL'
+            ELSE 'EMPTY'
+        END AS status,
+        CASE
+            WHEN (unit.category = 'STRGE' AND fcy.transit_state = 'S70_DEPARTED')
+              OR (unit.category = 'EXPRT' AND fcy.transit_state IN ('S20_INBOUND','S40_YARD','S70_DEPARTED'))
+                THEN 'ATENDIDO'
+            ELSE 'PENDIENTE'
+        END AS status2,
+        commodity.short_name AS commodity,
+        order_item.temp_required AS temperature,
+        COALESCE(actual_grade.id, requested_grade.id) AS reefer_technology,
+        shipper.name AS shipper
+    FROM inv_eq_base_order booking
+    INNER JOIN argo_carrier_visit acv ON acv.gkey = booking.vessel_visit_gkey
+    INNER JOIN vsl_vessel_visit_details visit ON visit.vvd_gkey = acv.cvcvd_gkey
+    INNER JOIN vsl_vessels vessel ON vessel.gkey = visit.vessel_gkey
+    LEFT JOIN ref_bizunit_scoped line ON line.gkey = acv.operator_gkey
+    OUTER APPLY (
+        SELECT TOP 1
+            base_item.gkey AS base_item_gkey,
+            equipment.qty,
+            equipment.commodity_gkey,
+            equipment.eq_grade_gkey,
+            equipment.eqtyp_gkey,
+            equipment.temp_required
+        FROM inv_eq_base_order_item base_item
+        INNER JOIN ord_equipment_order_items equipment ON equipment.gkey = base_item.gkey
+        WHERE base_item.eqo_gkey = booking.gkey
+        ORDER BY equipment.gkey DESC
+    ) order_item
+    LEFT JOIN inv_unit unit ON unit.depart_order_item_gkey = order_item.base_item_gkey
+    OUTER APPLY (
+        SELECT TOP 1 visit_fcy.transit_state
+        FROM inv_unit_fcy_visit visit_fcy
+        WHERE visit_fcy.unit_gkey = unit.gkey
+        ORDER BY visit_fcy.gkey DESC
+    ) fcy
+    OUTER APPLY (
+        SELECT TOP 1 slot.start_date
+        FROM road_gate_appointment appt
+        LEFT JOIN road_appt_time_slot slot ON slot.gkey = appt.time_slot_gkey
+        WHERE appt.order_gkey = booking.gkey
+          AND appt.trans_type = 'DOE'
+          AND appt.gate_gkey = 53
+          AND appt.state <> 'CANCEL'
+        ORDER BY slot.start_date DESC, appt.gkey DESC
+    ) appointment
+    LEFT JOIN ref_routing_point pod ON pod.gkey = booking.pod1_gkey
+    LEFT JOIN ref_routing_point pod2 ON pod2.gkey = booking.pod2_gkey
+    LEFT JOIN ref_commodity commodity ON commodity.gkey = order_item.commodity_gkey
+    LEFT JOIN ref_equip_grades requested_grade ON requested_grade.gkey = order_item.eq_grade_gkey
+    LEFT JOIN ref_equip_type requested_type ON requested_type.gkey = order_item.eqtyp_gkey
+    LEFT JOIN ref_equipment equipment ON equipment.gkey = unit.eq_gkey
+    LEFT JOIN ref_equip_type actual_type ON actual_type.gkey = equipment.eqtyp_gkey
+    LEFT JOIN ref_equip_grades actual_grade ON actual_grade.gkey = unit.grade_gkey
+    LEFT JOIN ref_bizunit_scoped shipper ON shipper.gkey = booking.shipper_gkey
+    WHERE booking.vessel_visit_gkey = @carrierVisitGkey
+    ORDER BY booking.nbr, unit.id
   `,
 
     /**

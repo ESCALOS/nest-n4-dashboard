@@ -9,6 +9,6 @@ export default defineConfig({
     path: "prisma/migrations",
   },
   datasource: {
-    url: "postgresql://postgres:postgres@postgresql:5432/n4_dashboard",
+    url: process.env.DATABASE_URL,
   },
 });
