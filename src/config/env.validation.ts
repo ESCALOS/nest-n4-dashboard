@@ -73,12 +73,6 @@ class EnvironmentVariables {
   @IsOptional()
   TPR_DETAIL_MAX_LIMIT: number = 200;
 
-  @IsNumber()
-  @Min(1)
-  @Max(200)
-  @IsOptional()
-  TPR_EXPORT_BATCH_SIZE: number = 200;
-
   @IsString()
   @IsOptional()
   TPR_TIMEZONE: string = 'America/Lima';

@@ -1,5 +1,7 @@
 import { TprSummaryRow } from './tpr-report.types';
 
+export const TPR_DETAIL_PAGE_SIZE = 100;
+
 export const TPR_DEFAULT_SUMMARY_ROWS: readonly TprSummaryRow[] = [
   {
     uniqueId: '71010001',

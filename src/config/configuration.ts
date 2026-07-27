@@ -39,7 +39,6 @@ export default () => ({
       10,
     ),
     detailMaxLimit: parseInt(process.env.TPR_DETAIL_MAX_LIMIT || '200', 10),
-    exportBatchSize: parseInt(process.env.TPR_EXPORT_BATCH_SIZE || '200', 10),
     timezone: process.env.TPR_TIMEZONE || 'America/Lima',
     truckGateGkey: parseInt(process.env.TPR_TRUCK_GATE_GKEY || '53', 10),
   },

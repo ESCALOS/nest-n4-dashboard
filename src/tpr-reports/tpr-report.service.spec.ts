@@ -40,7 +40,6 @@ describe('TprReportService', () => {
           'tprReports.closedMonthTtlSeconds': 604800,
           'tprReports.regenerationLockTtlSeconds': 120,
           'tprReports.detailMaxLimit': 200,
-          'tprReports.exportBatchSize': 200,
           'tprReports.timezone': 'America/Lima',
         };
         return values[key];
@@ -136,6 +135,33 @@ describe('TprReportService', () => {
         100,
       ),
     ).rejects.toThrow('TPR topic has no detail records');
+    expect(repository.getDetails).not.toHaveBeenCalled();
+  });
+
+  it('reuses a cached 100-row detail page used by the modal and export', async () => {
+    const { service, repository, redis } = createSubject();
+    redis.getJson
+      .mockResolvedValueOnce({
+        generatedAt: '2026-07-24T10:00:00.000Z',
+        rows: [truckRow],
+      })
+      .mockResolvedValueOnce({
+        generatedAt: '2026-07-24T10:01:00.000Z',
+        accountDescription: truckRow.accountDescription,
+        total: truckRow.total,
+        rows: [],
+      });
+
+    const response = await service.getDetails(
+      '2026-07',
+      TprReportType.TRUCK_IN_OUT,
+      truckRow.uniqueId,
+      1,
+      100,
+    );
+
+    expect(service.exportBatchSize).toBe(100);
+    expect(response.cached).toBe(true);
     expect(repository.getDetails).not.toHaveBeenCalled();
   });
 

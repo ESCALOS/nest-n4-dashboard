@@ -9,7 +9,10 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'crypto';
 import { RedisService } from '../database/redis/redis.service';
-import { TPR_DEFAULT_SUMMARY_ROWS } from './tpr-report.defaults';
+import {
+  TPR_DEFAULT_SUMMARY_ROWS,
+  TPR_DETAIL_PAGE_SIZE,
+} from './tpr-report.defaults';
 import {
   TprCachedDetailPage,
   TprCachedSummary,
@@ -60,13 +63,7 @@ export class TprReportService {
         200,
       ),
     );
-    this.exportBatchSize = Math.min(
-      this.detailMaxLimit,
-      this.positiveConfig(
-        configService.get<number>('tprReports.exportBatchSize'),
-        200,
-      ),
-    );
+    this.exportBatchSize = Math.min(this.detailMaxLimit, TPR_DETAIL_PAGE_SIZE);
     this.timezone =
       configService.get<string>('tprReports.timezone') || 'America/Lima';
   }
