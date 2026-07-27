@@ -66,12 +66,22 @@ export class TprReportExcelService {
     const isVesselCalls = uniqueId === TPR_VESSEL_CALLS_UNIQUE_ID;
     worksheet.columns = isVesselCalls
       ? [
-          { header: 'ATD', key: 'atd', width: 22 },
+          {
+            header: 'ATD',
+            key: 'atd',
+            width: 22,
+            style: { numFmt: 'd/mm/yyyy hh:mm' },
+          },
           { header: 'MANIFIESTO', key: 'manifest', width: 18 },
           { header: 'NAVE', key: 'vessel', width: 28 },
         ]
       : [
-          { header: 'FECHA', key: 'movementDate', width: 22 },
+          {
+            header: 'FECHA',
+            key: 'movementDate',
+            width: 22,
+            style: { numFmt: 'd/mm/yyyy hh:mm' },
+          },
           { header: 'CONTENEDOR', key: 'container', width: 16 },
           { header: 'OPERACIÓN', key: 'operation', width: 16 },
           { header: 'ESTADO', key: 'status', width: 12 },
@@ -123,8 +133,6 @@ export class TprReportExcelService {
       page += 1;
     } while (page <= detail.pagination.totalPages);
 
-    worksheet.getColumn(isVesselCalls ? 'atd' : 'movementDate').numFmt =
-      'dd/mm/yyyy hh:mm:ss';
     worksheet.commit();
     await workbook.commit();
     this.logger.log(
