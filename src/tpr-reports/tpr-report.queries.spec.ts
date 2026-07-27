@@ -38,4 +38,15 @@ describe('TprReportQueries', () => {
     );
     expect(TprReportQueries.containerSummary).toContain('acv.atd<@fecha_fin');
   });
+
+  it('returns a paginated Vessel calls detail with ATD, manifest and vessel', () => {
+    expect(TprReportQueries.vesselCallsDetails).toContain('acv.atd');
+    expect(TprReportQueries.vesselCallsDetails).toContain('acv.id AS manifest');
+    expect(TprReportQueries.vesselCallsDetails).toContain(
+      'vessel.name AS vessel',
+    );
+    expect(TprReportQueries.vesselCallsDetails).toContain(
+      'ORDER BY acv.atd,acv.gkey',
+    );
+  });
 });

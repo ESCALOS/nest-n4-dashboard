@@ -336,6 +336,27 @@ ORDER BY mc.fecha_movimiento,mc.mve_gkey
 OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY;
 `,
 
+  vesselCallsDetails: `
+SELECT
+    'Container Vessel calls' AS account_description,
+    acv.atd,
+    acv.id AS manifest,
+    vessel.name AS vessel,
+    COUNT(*) OVER() AS total_count
+FROM argo_carrier_visit acv
+INNER JOIN argo_visit_details visit_details
+    ON visit_details.gkey=acv.cvcvd_gkey
+INNER JOIN vsl_vessel_visit_details vessel_visit
+    ON vessel_visit.vvd_gkey=visit_details.gkey
+LEFT JOIN vsl_vessels vessel ON vessel.gkey=vessel_visit.vessel_gkey
+WHERE vessel_visit.flex_string01='CONT'
+  AND acv.phase IN ('60DEPARTED','70CLOSED')
+  AND acv.atd>=@fecha_inicio
+  AND acv.atd<@fecha_fin
+ORDER BY acv.atd,acv.gkey
+OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY;
+`,
+
   truckSummary: `
 ${TRUCK_CTES}
 SELECT

@@ -6,11 +6,14 @@ import { TprReportQueries } from './tpr-report.queries';
 import { TPR_VESSEL_CALLS_UNIQUE_ID } from './tpr-report.defaults';
 import {
   TprDetailReportType,
+  TprBusinessDetailRow,
+  TprDetailKind,
   TprDetailRow,
   TprDetailSqlRow,
   TprOperationalSummaryRow,
   TprReportType,
   TprSummarySqlRow,
+  TprVesselCallDetailSqlRow,
 } from './tpr-report.types';
 
 export interface TprPeriodRange {
@@ -21,7 +24,8 @@ export interface TprPeriodRange {
 export interface TprDetailPageData {
   accountDescription: string | null;
   total: number;
-  rows: TprDetailRow[];
+  detailKind: TprDetailKind;
+  rows: TprBusinessDetailRow[];
 }
 
 @Injectable()
@@ -51,7 +55,7 @@ export class TprReportRepository {
       accountDescription: row.account_description,
       total: Number(row.total),
       reportType: TprReportType.CONTAINER_VESSEL,
-      supportsDetails: row.unique_id !== TPR_VESSEL_CALLS_UNIQUE_ID,
+      supportsDetails: true,
     }));
   }
 
@@ -83,6 +87,10 @@ export class TprReportRepository {
     offset: number,
     limit: number,
   ): Promise<TprDetailPageData> {
+    if (uniqueId === TPR_VESSEL_CALLS_UNIQUE_ID) {
+      return this.getVesselCallsDetails(range, offset, limit);
+    }
+
     const isContainer = reportType === TprReportType.CONTAINER_VESSEL;
     const query = isContainer
       ? TprReportQueries.containerDetails
@@ -104,7 +112,38 @@ export class TprReportRepository {
     return {
       accountDescription: result.recordset[0]?.account_description ?? null,
       total: Number(result.recordset[0]?.total_count ?? 0),
+      detailKind: TprDetailKind.MOVEMENTS,
       rows: result.recordset.map((row) => this.mapDetailRow(row)),
+    };
+  }
+
+  private async getVesselCallsDetails(
+    range: TprPeriodRange,
+    offset: number,
+    limit: number,
+  ): Promise<TprDetailPageData> {
+    const result = await this.n4Service.query<TprVesselCallDetailSqlRow>(
+      TprReportQueries.vesselCallsDetails,
+      'tprVesselCallsDetails',
+      (request) => {
+        this.bindPeriod(request, range);
+        request.input('offset', sql.Int, offset);
+        request.input('limit', sql.Int, limit);
+      },
+    );
+
+    return {
+      accountDescription: result.recordset[0]?.account_description ?? null,
+      total: Number(result.recordset[0]?.total_count ?? 0),
+      detailKind: TprDetailKind.VESSEL_CALLS,
+      rows: result.recordset.map((row) => ({
+        atd:
+          row.atd instanceof Date
+            ? row.atd.toISOString()
+            : new Date(row.atd).toISOString(),
+        manifest: row.manifest,
+        vessel: row.vessel ?? null,
+      })),
     };
   }
 

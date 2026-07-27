@@ -8,6 +8,11 @@ export type TprDetailReportType =
   | TprReportType.CONTAINER_VESSEL
   | TprReportType.TRUCK_IN_OUT;
 
+export enum TprDetailKind {
+  MOVEMENTS = 'MOVEMENTS',
+  VESSEL_CALLS = 'VESSEL_CALLS',
+}
+
 export interface TprOperationalSummaryRow {
   uniqueId: string;
   accountDescription: string;
@@ -47,6 +52,14 @@ export interface TprDetailRow {
   vessel: string | null;
 }
 
+export interface TprVesselCallDetailRow {
+  atd: string;
+  manifest: string;
+  vessel: string | null;
+}
+
+export type TprBusinessDetailRow = TprDetailRow | TprVesselCallDetailRow;
+
 export interface TprDetailResponse {
   period: string;
   reportType: TprDetailReportType;
@@ -54,7 +67,8 @@ export interface TprDetailResponse {
   accountDescription: string;
   generatedAt: string;
   cached: boolean;
-  rows: TprDetailRow[];
+  detailKind: TprDetailKind;
+  rows: TprBusinessDetailRow[];
   pagination: {
     page: number;
     limit: number;
@@ -87,6 +101,14 @@ export interface TprDetailSqlRow {
   total_count: number;
 }
 
+export interface TprVesselCallDetailSqlRow {
+  account_description: string;
+  atd: Date | string;
+  manifest: string;
+  vessel: string | null;
+  total_count: number;
+}
+
 export interface TprCachedSummary {
   generatedAt: string;
   rows: TprOperationalSummaryRow[];
@@ -96,5 +118,6 @@ export interface TprCachedDetailPage {
   generatedAt: string;
   accountDescription: string;
   total: number;
-  rows: TprDetailRow[];
+  detailKind: TprDetailKind;
+  rows: TprBusinessDetailRow[];
 }

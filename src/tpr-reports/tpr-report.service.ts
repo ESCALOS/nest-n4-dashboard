@@ -151,6 +151,7 @@ export class TprReportService {
       generatedAt: new Date().toISOString(),
       accountDescription: topic.accountDescription,
       total: result.total,
+      detailKind: result.detailKind,
       rows: result.rows,
     };
     if (cached.available) {
@@ -297,6 +298,7 @@ export class TprReportService {
       accountDescription: payload.accountDescription,
       generatedAt: payload.generatedAt,
       cached,
+      detailKind: payload.detailKind,
       rows: payload.rows,
       pagination: {
         page,

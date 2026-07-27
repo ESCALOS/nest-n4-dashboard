@@ -16,7 +16,7 @@ export class AppointmentsRefreshJob {
   /**
    * Refresh appointments in progress every 5 seconds
    */
-  @Cron(CronExpression.EVERY_30_MINUTES)
+  @Cron(CronExpression.EVERY_10_SECONDS)
   async refreshAppointments() {
     if (this.isRunning) {
       this.logger.warn(

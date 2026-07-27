@@ -7,7 +7,11 @@ import {
 } from './tpr-report.defaults';
 import { TprReportRepository } from './tpr-report.repository';
 import { TprReportService } from './tpr-report.service';
-import { TprOperationalSummaryRow, TprReportType } from './tpr-report.types';
+import {
+  TprDetailKind,
+  TprOperationalSummaryRow,
+  TprReportType,
+} from './tpr-report.types';
 
 describe('TprReportService', () => {
   const containerRow: TprOperationalSummaryRow = {
@@ -143,7 +147,7 @@ describe('TprReportService', () => {
     expect(truck.rows.every((row) => row.reportType !== null)).toBe(true);
   });
 
-  it('never enables detail for Container Vessel calls', async () => {
+  it('enables detail for positive Container Vessel calls', async () => {
     const { service, repository } = createSubject();
     repository.getContainerSummary.mockResolvedValue([
       {
@@ -151,7 +155,7 @@ describe('TprReportService', () => {
         accountDescription: 'Container Vessel calls',
         total: 8,
         reportType: TprReportType.CONTAINER_VESSEL,
-        supportsDetails: false,
+        supportsDetails: true,
       },
     ]);
 
@@ -163,7 +167,7 @@ describe('TprReportService', () => {
     expect(response.rows[0]).toMatchObject({
       uniqueId: TPR_VESSEL_CALLS_UNIQUE_ID,
       total: 8,
-      hasDetails: false,
+      hasDetails: true,
     });
   });
 
@@ -197,6 +201,7 @@ describe('TprReportService', () => {
         generatedAt: '2026-07-24T10:01:00.000Z',
         accountDescription: truckRow.accountDescription,
         total: truckRow.total,
+        detailKind: TprDetailKind.MOVEMENTS,
         rows: [],
       });
 

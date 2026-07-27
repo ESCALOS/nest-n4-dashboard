@@ -3,7 +3,7 @@ import { N4Service } from '../database/n4/n4.service';
 import { TPR_VESSEL_CALLS_UNIQUE_ID } from './tpr-report.defaults';
 import { TprReportQueries } from './tpr-report.queries';
 import { TprReportRepository } from './tpr-report.repository';
-import { TprReportType } from './tpr-report.types';
+import { TprDetailKind, TprReportType } from './tpr-report.types';
 
 describe('TprReportRepository', () => {
   const range = {
@@ -25,7 +25,7 @@ describe('TprReportRepository', () => {
     return { repository, n4Service };
   }
 
-  it('marks Vessel calls as the only container topic without detail support', async () => {
+  it('marks all positive container topics as detail-capable', async () => {
     const { repository, n4Service } = createSubject();
     n4Service.query.mockResolvedValue({
       recordset: [
@@ -51,7 +51,7 @@ describe('TprReportRepository', () => {
       }),
       expect.objectContaining({
         uniqueId: TPR_VESSEL_CALLS_UNIQUE_ID,
-        supportsDetails: false,
+        supportsDetails: true,
       }),
     ]);
   });
@@ -99,6 +99,47 @@ describe('TprReportRepository', () => {
       shippingLineName: 'Maersk',
       manifest: '2026-100',
       vessel: 'TEST VESSEL',
+    });
+    expect(result.detailKind).toBe(TprDetailKind.MOVEMENTS);
+  });
+
+  it('returns ATD, manifest and vessel for Vessel calls', async () => {
+    const { repository, n4Service } = createSubject();
+    n4Service.query.mockResolvedValue({
+      recordset: [
+        {
+          account_description: 'Container Vessel calls',
+          atd: new Date('2026-06-20T18:30:00.000Z'),
+          manifest: '2026-200',
+          vessel: 'CALL TEST',
+          total_count: 1,
+        },
+      ],
+    });
+
+    const result = await repository.getDetails(
+      range,
+      TprReportType.CONTAINER_VESSEL,
+      TPR_VESSEL_CALLS_UNIQUE_ID,
+      0,
+      100,
+    );
+
+    expect(n4Service.query).toHaveBeenCalledWith(
+      TprReportQueries.vesselCallsDetails,
+      'tprVesselCallsDetails',
+      expect.any(Function),
+    );
+    expect(result).toMatchObject({
+      detailKind: TprDetailKind.VESSEL_CALLS,
+      total: 1,
+      rows: [
+        {
+          atd: '2026-06-20T18:30:00.000Z',
+          manifest: '2026-200',
+          vessel: 'CALL TEST',
+        },
+      ],
     });
   });
 });
