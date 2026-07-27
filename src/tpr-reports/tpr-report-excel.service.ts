@@ -30,17 +30,18 @@ export class TprReportExcelService {
       },
       { header: 'TOTAL', key: 'total', width: 14 },
     ];
-    worksheet.getColumn('total').numFmt = '#,##0.##';
     this.styleHeader(worksheet);
 
     for (const row of report.rows) {
-      worksheet
-        .addRow({
-          uniqueId: row.uniqueId,
-          accountDescription: row.accountDescription,
-          total: row.total,
-        })
-        .commit();
+      const excelRow = worksheet.addRow({
+        uniqueId: row.uniqueId,
+        accountDescription: row.accountDescription,
+        total: row.total,
+      });
+      excelRow.getCell('total').numFmt = Number.isInteger(row.total)
+        ? '#,##0'
+        : '#,##0.##';
+      excelRow.commit();
     }
 
     worksheet.commit();
