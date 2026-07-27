@@ -13,6 +13,7 @@ export interface TprOperationalSummaryRow {
   accountDescription: string;
   total: number;
   reportType: TprDetailReportType;
+  supportsDetails: boolean;
 }
 
 export interface TprSummaryRow {

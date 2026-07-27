@@ -10,8 +10,10 @@ import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'crypto';
 import { RedisService } from '../database/redis/redis.service';
 import {
+  TPR_CACHE_NAMESPACE,
   TPR_DEFAULT_SUMMARY_ROWS,
   TPR_DETAIL_PAGE_SIZE,
+  TPR_OPERATIONAL_TOPIC_ORDER,
 } from './tpr-report.defaults';
 import {
   TprCachedDetailPage,
@@ -38,6 +40,9 @@ export class TprReportService {
   private readonly detailMaxLimit: number;
   private readonly timezone: string;
   readonly exportBatchSize: number;
+  private readonly topicOrder = new Map(
+    TPR_OPERATIONAL_TOPIC_ORDER.map((uniqueId, index) => [uniqueId, index]),
+  );
 
   constructor(
     private readonly repository: TprReportRepository,
@@ -234,9 +239,11 @@ export class TprReportService {
       this.repository.getContainerSummary(range),
       this.repository.getTruckSummary(range),
     ]);
-    const rows = [...containerRows, ...truckRows].sort((a, b) =>
-      a.uniqueId.localeCompare(b.uniqueId),
-    );
+    const rows = [...containerRows, ...truckRows].sort((a, b) => {
+      const aOrder = this.topicOrder.get(a.uniqueId) ?? Number.MAX_SAFE_INTEGER;
+      const bOrder = this.topicOrder.get(b.uniqueId) ?? Number.MAX_SAFE_INTEGER;
+      return aOrder - bOrder || a.uniqueId.localeCompare(b.uniqueId);
+    });
     this.logger.log(
       `TPR summary ${period} generated with ${rows.length} topics in ${Date.now() - startedAt}ms`,
     );
@@ -257,8 +264,11 @@ export class TprReportService {
         ? payload.rows
         : payload.rows.filter((row) => row.reportType === type);
     const rows: TprSummaryRow[] = operationalRows.map((row) => ({
-      ...row,
-      hasDetails: row.total > 0,
+      uniqueId: row.uniqueId,
+      accountDescription: row.accountDescription,
+      total: row.total,
+      reportType: row.reportType,
+      hasDetails: row.supportsDetails && row.total > 0,
     }));
     if (type === TprReportType.ALL) {
       rows.push(...TPR_DEFAULT_SUMMARY_ROWS);
@@ -363,11 +373,11 @@ export class TprReportService {
   }
 
   private versionKey(period: string): string {
-    return `report:tpr:${period}:version`;
+    return `${TPR_CACHE_NAMESPACE}:${period}:version`;
   }
 
   private summaryKey(period: string, version: number): string {
-    return `report:tpr:${period}:v${version}:summary`;
+    return `${TPR_CACHE_NAMESPACE}:${period}:v${version}:summary`;
   }
 
   private detailKey(
@@ -378,11 +388,11 @@ export class TprReportService {
     page: number,
     limit: number,
   ): string {
-    return `report:tpr:${period}:v${version}:detail:${reportType}:${uniqueId}:page:${page}:limit:${limit}`;
+    return `${TPR_CACHE_NAMESPACE}:${period}:v${version}:detail:${reportType}:${uniqueId}:page:${page}:limit:${limit}`;
   }
 
   private lockKey(period: string): string {
-    return `report:tpr:${period}:lock`;
+    return `${TPR_CACHE_NAMESPACE}:${period}:lock`;
   }
 
   private positiveConfig(value: number | undefined, fallback: number): number {

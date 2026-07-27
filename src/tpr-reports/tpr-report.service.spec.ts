@@ -1,6 +1,10 @@
 import { ConfigService } from '@nestjs/config';
 import { RedisService } from '../database/redis/redis.service';
-import { TPR_DEFAULT_SUMMARY_ROWS } from './tpr-report.defaults';
+import {
+  TPR_DEFAULT_SUMMARY_ROWS,
+  TPR_OPERATIONAL_TOPIC_ORDER,
+  TPR_VESSEL_CALLS_UNIQUE_ID,
+} from './tpr-report.defaults';
 import { TprReportRepository } from './tpr-report.repository';
 import { TprReportService } from './tpr-report.service';
 import { TprOperationalSummaryRow, TprReportType } from './tpr-report.types';
@@ -11,12 +15,14 @@ describe('TprReportService', () => {
     accountDescription: 'Container Vessel Discharge Local Full Dry 20',
     total: 0,
     reportType: TprReportType.CONTAINER_VESSEL,
+    supportsDetails: true,
   };
   const truckRow: TprOperationalSummaryRow = {
     uniqueId: '5X311110BDRY20FT',
     accountDescription: 'Truck IN Local Full Dry 20',
     total: 4,
     reportType: TprReportType.TRUCK_IN_OUT,
+    supportsDetails: true,
   };
 
   function createSubject() {
@@ -67,7 +73,15 @@ describe('TprReportService', () => {
     );
 
     expect(response.cached).toBe(true);
-    expect(response.rows).toEqual([{ ...truckRow, hasDetails: true }]);
+    expect(response.rows).toEqual([
+      {
+        uniqueId: truckRow.uniqueId,
+        accountDescription: truckRow.accountDescription,
+        total: truckRow.total,
+        reportType: truckRow.reportType,
+        hasDetails: true,
+      },
+    ]);
     expect(repository.getContainerSummary).not.toHaveBeenCalled();
     expect(repository.getTruckSummary).not.toHaveBeenCalled();
   });
@@ -82,30 +96,40 @@ describe('TprReportService', () => {
     expect(
       response.rows.find((row) => row.uniqueId === containerRow.uniqueId),
     ).toEqual({
-      ...containerRow,
+      uniqueId: containerRow.uniqueId,
+      accountDescription: containerRow.accountDescription,
+      total: containerRow.total,
+      reportType: containerRow.reportType,
       hasDetails: false,
     });
     expect(response.rows.slice(-9)).toEqual(TPR_DEFAULT_SUMMARY_ROWS);
     expect(redis.setJson).toHaveBeenCalledTimes(1);
   });
 
-  it('appends nine defaults after 48 operational topics only for ALL', async () => {
+  it('returns 49 ordered operational topics and appends defaults only for ALL', async () => {
     const { service, repository } = createSubject();
     repository.getContainerSummary.mockResolvedValue(
-      Array.from({ length: 36 }, (_, index) => ({
-        ...containerRow,
-        uniqueId: `CV${String(index).padStart(2, '0')}`,
-      })),
+      TPR_OPERATIONAL_TOPIC_ORDER.slice(0, 37)
+        .reverse()
+        .map((uniqueId) => ({
+          ...containerRow,
+          uniqueId,
+        })),
     );
     repository.getTruckSummary.mockResolvedValue(
-      Array.from({ length: 12 }, (_, index) => ({
-        ...truckRow,
-        uniqueId: `TR${String(index).padStart(2, '0')}`,
-      })),
+      TPR_OPERATIONAL_TOPIC_ORDER.slice(37)
+        .reverse()
+        .map((uniqueId) => ({
+          ...truckRow,
+          uniqueId,
+        })),
     );
 
     const all = await service.getSummary('2026-06', TprReportType.ALL);
-    expect(all.rows).toHaveLength(57);
+    expect(all.rows).toHaveLength(58);
+    expect(all.rows.slice(0, 49).map((row) => row.uniqueId)).toEqual(
+      TPR_OPERATIONAL_TOPIC_ORDER,
+    );
     expect(all.rows.slice(-9)).toEqual(TPR_DEFAULT_SUMMARY_ROWS);
     expect(typeof all.rows.at(-1)?.total).toBe('number');
     expect(all.rows.at(-1)?.total).toBe(11895.3);
@@ -117,6 +141,30 @@ describe('TprReportService', () => {
     );
     expect(truck.rows).toHaveLength(1);
     expect(truck.rows.every((row) => row.reportType !== null)).toBe(true);
+  });
+
+  it('never enables detail for Container Vessel calls', async () => {
+    const { service, repository } = createSubject();
+    repository.getContainerSummary.mockResolvedValue([
+      {
+        uniqueId: TPR_VESSEL_CALLS_UNIQUE_ID,
+        accountDescription: 'Container Vessel calls',
+        total: 8,
+        reportType: TprReportType.CONTAINER_VESSEL,
+        supportsDetails: false,
+      },
+    ]);
+
+    const response = await service.getSummary(
+      '2026-06',
+      TprReportType.CONTAINER_VESSEL,
+    );
+
+    expect(response.rows[0]).toMatchObject({
+      uniqueId: TPR_VESSEL_CALLS_UNIQUE_ID,
+      total: 8,
+      hasDetails: false,
+    });
   });
 
   it('does not query N4 detail for a zero-total topic', async () => {

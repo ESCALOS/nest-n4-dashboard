@@ -15,7 +15,7 @@ configuracion_carga AS (
     SELECT *
     FROM (VALUES
         ('FULL','DRY','1','10','BDRY','Full','Dry'),
-        ('EMPTY','DRY','2','20','BDRY','Empty','Dry'),
+        ('EMPTY','DRY','1','20','BDRY','Empty','Dry'),
         ('FULL','REEFER','1','10','BREF','Full','Reefer')
     ) v(estado_normalizado,equipo_normalizado,freight_code,cargo_code,
         equipment_code,estado_descripcion,equipo_descripcion)
@@ -77,7 +77,7 @@ movimientos_base AS (
             WHEN ime.move_kind = 'DSCH' THEN iufv.actual_ib_cv
             WHEN ime.move_kind IN ('LOAD','RECV') THEN iufv.actual_ob_cv
         END
-    LEFT JOIN ref_bizunit_scoped line ON line.gkey = acv.operator_gkey
+    LEFT JOIN ref_bizunit_scoped line ON line.gkey = iu.line_op
     LEFT JOIN argo_visit_details visit_details
         ON visit_details.gkey = acv.cvcvd_gkey
     LEFT JOIN vsl_vessel_visit_details vessel_visit
@@ -158,7 +158,7 @@ WITH configuracion_operacion AS (
 configuracion_carga AS (
     SELECT * FROM (VALUES
         ('FULL','DRY','1','10','BDRY','Full','Dry'),
-        ('EMPTY','DRY','2','20','BDRY','Empty','Dry'),
+        ('EMPTY','DRY','1','20','BDRY','Empty','Dry'),
         ('FULL','REEFER','1','10','BREF','Full','Reefer')
     ) v(estado_normalizado,equipo_normalizado,freight_code,cargo_code,
         equipment_code,estado_descripcion,equipo_descripcion)
@@ -190,6 +190,7 @@ transacciones_base AS (
         rt.unit_gkey,
         iu.id AS contenedor,
         iu.category,
+        iu.line_op,
         ret.id AS iso,
         ret.description AS tipo_contenedor,
         ret.nominal_length,
@@ -248,7 +249,7 @@ transacciones_enriquecidas AS (
         vessel.name AS nave
     FROM transacciones_normalizadas tn
     LEFT JOIN argo_carrier_visit acv ON acv.gkey=tn.carrier_visit_gkey
-    LEFT JOIN ref_bizunit_scoped line ON line.gkey=acv.operator_gkey
+    LEFT JOIN ref_bizunit_scoped line ON line.gkey=tn.line_op
     LEFT JOIN argo_visit_details visit_details
         ON visit_details.gkey=acv.cvcvd_gkey
     LEFT JOIN vsl_vessel_visit_details vessel_visit
@@ -286,7 +287,22 @@ LEFT JOIN movimientos_clasificados mc
    AND c.equipo_normalizado=mc.equipo_normalizado
    AND c.nominal_length=mc.nominal_length
 GROUP BY c.unique_id,c.account_description
-ORDER BY c.unique_id;
+
+UNION ALL
+
+SELECT
+    '5X101000BDUMSDUM' AS unique_id,
+    'Container Vessel calls' AS account_description,
+    COUNT(*) AS total
+FROM argo_carrier_visit acv
+INNER JOIN argo_visit_details visit_details
+    ON visit_details.gkey=acv.cvcvd_gkey
+INNER JOIN vsl_vessel_visit_details vessel_visit
+    ON vessel_visit.vvd_gkey=visit_details.gkey
+WHERE vessel_visit.flex_string01='CONT'
+  AND acv.phase IN ('60DEPARTED','70CLOSED')
+  AND acv.atd>=@fecha_inicio
+  AND acv.atd<@fecha_fin;
 `,
 
   containerDetails: `

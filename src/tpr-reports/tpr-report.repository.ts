@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import * as sql from 'mssql';
 import { N4Service } from '../database/n4/n4.service';
 import { TprReportQueries } from './tpr-report.queries';
+import { TPR_VESSEL_CALLS_UNIQUE_ID } from './tpr-report.defaults';
 import {
   TprDetailReportType,
   TprDetailRow,
@@ -50,6 +51,7 @@ export class TprReportRepository {
       accountDescription: row.account_description,
       total: Number(row.total),
       reportType: TprReportType.CONTAINER_VESSEL,
+      supportsDetails: row.unique_id !== TPR_VESSEL_CALLS_UNIQUE_ID,
     }));
   }
 
@@ -70,6 +72,7 @@ export class TprReportRepository {
       accountDescription: row.account_description,
       total: Number(row.total),
       reportType: TprReportType.TRUCK_IN_OUT,
+      supportsDetails: true,
     }));
   }
 
@@ -81,10 +84,11 @@ export class TprReportRepository {
     limit: number,
   ): Promise<TprDetailPageData> {
     const isContainer = reportType === TprReportType.CONTAINER_VESSEL;
+    const query = isContainer
+      ? TprReportQueries.containerDetails
+      : TprReportQueries.truckDetails;
     const result = await this.n4Service.query<TprDetailSqlRow>(
-      isContainer
-        ? TprReportQueries.containerDetails
-        : TprReportQueries.truckDetails,
+      query,
       isContainer ? 'tprContainerDetails' : 'tprTruckDetails',
       (request) => {
         this.bindPeriod(request, range);
