@@ -71,6 +71,58 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     return result === 1;
   }
 
+  async increment(key: string): Promise<number> {
+    return this.client.incr(key);
+  }
+
+  async setIfAbsent(
+    key: string,
+    value: string,
+    ttlSeconds: number,
+  ): Promise<boolean> {
+    const result = await this.client.set(key, value, 'EX', ttlSeconds, 'NX');
+    return result === 'OK';
+  }
+
+  async compareAndDelete(key: string, expectedValue: string): Promise<boolean> {
+    const result = await this.client.eval(
+      `
+        if redis.call('GET', KEYS[1]) == ARGV[1] then
+          return redis.call('DEL', KEYS[1])
+        end
+        return 0
+      `,
+      1,
+      key,
+      expectedValue,
+    );
+    return Number(result) === 1;
+  }
+
+  async activateVersionAndReleaseLock(
+    versionKey: string,
+    nextVersion: number,
+    lockKey: string,
+    lockOwner: string,
+  ): Promise<boolean> {
+    const result = await this.client.eval(
+      `
+        if redis.call('GET', KEYS[2]) == ARGV[2] then
+          redis.call('SET', KEYS[1], ARGV[1])
+          redis.call('DEL', KEYS[2])
+          return 1
+        end
+        return 0
+      `,
+      2,
+      versionKey,
+      lockKey,
+      String(nextVersion),
+      lockOwner,
+    );
+    return Number(result) === 1;
+  }
+
   // JSON operations
   async getJson<T>(key: string): Promise<T | null> {
     const value = await this.get(key);

@@ -13,6 +13,7 @@ import { ContainersMonitoringModule } from './monitoring/containers/containers-m
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
 import { HealthController } from './health.controller';
+import { TprReportModule } from './tpr-reports/tpr-report.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { HealthController } from './health.controller';
     AppointmentsModule,
     GeneralCargoModule,
     ContainersMonitoringModule,
+    TprReportModule,
 
     // Cache management
     CacheManagementModule,

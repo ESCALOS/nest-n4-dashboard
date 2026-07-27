@@ -68,6 +68,21 @@ export class N4Service implements OnModuleInit, OnModuleDestroy {
     return result;
   }
 
+  /**
+   * Executes a typed, parameterized query using the shared N4 connection pool.
+   * Feature repositories configure parameters through the provided callback so
+   * they never need to create a second SQL Server connection.
+   */
+  async query<T>(
+    query: string,
+    operation: string,
+    configure?: (request: sql.Request) => void,
+  ): Promise<sql.IResult<T>> {
+    const request = this.pool.request();
+    configure?.(request);
+    return this.executeQuery<T>(request, query, operation);
+  }
+
   async onModuleInit() {
     const config: sql.config = {
       server: this.configService.get<string>('n4.host')!,

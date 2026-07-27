@@ -25,4 +25,22 @@ export default () => ({
     email: process.env.ADMIN_EMAIL || 'admin@navis.com',
     password: process.env.ADMIN_PASSWORD || 'admin123456',
   },
+  tprReports: {
+    currentMonthTtlSeconds: parseInt(
+      process.env.TPR_CURRENT_MONTH_TTL_SECONDS || '600',
+      10,
+    ),
+    closedMonthTtlSeconds: parseInt(
+      process.env.TPR_CLOSED_MONTH_TTL_SECONDS || '604800',
+      10,
+    ),
+    regenerationLockTtlSeconds: parseInt(
+      process.env.TPR_REGENERATION_LOCK_TTL_SECONDS || '120',
+      10,
+    ),
+    detailMaxLimit: parseInt(process.env.TPR_DETAIL_MAX_LIMIT || '200', 10),
+    exportBatchSize: parseInt(process.env.TPR_EXPORT_BATCH_SIZE || '200', 10),
+    timezone: process.env.TPR_TIMEZONE || 'America/Lima',
+    truckGateGkey: parseInt(process.env.TPR_TRUCK_GATE_GKEY || '53', 10),
+  },
 });

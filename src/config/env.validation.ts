@@ -51,6 +51,43 @@ class EnvironmentVariables {
   @IsOptional()
   REDIS_DB: number = 0;
 
+  // Reporte TPR
+  @IsNumber()
+  @Min(1)
+  @IsOptional()
+  TPR_CURRENT_MONTH_TTL_SECONDS: number = 600;
+
+  @IsNumber()
+  @Min(1)
+  @IsOptional()
+  TPR_CLOSED_MONTH_TTL_SECONDS: number = 604800;
+
+  @IsNumber()
+  @Min(1)
+  @IsOptional()
+  TPR_REGENERATION_LOCK_TTL_SECONDS: number = 120;
+
+  @IsNumber()
+  @Min(1)
+  @Max(200)
+  @IsOptional()
+  TPR_DETAIL_MAX_LIMIT: number = 200;
+
+  @IsNumber()
+  @Min(1)
+  @Max(200)
+  @IsOptional()
+  TPR_EXPORT_BATCH_SIZE: number = 200;
+
+  @IsString()
+  @IsOptional()
+  TPR_TIMEZONE: string = 'America/Lima';
+
+  @IsNumber()
+  @Min(1)
+  @IsOptional()
+  TPR_TRUCK_GATE_GKEY: number = 53;
+
   // Job Intervals
   @IsNumber()
   @Min(1000)
