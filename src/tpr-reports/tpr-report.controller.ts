@@ -1,9 +1,10 @@
 import { Body, Controller, Get, Post, Query, Res } from '@nestjs/common';
-import { Role } from '@prisma/client';
+import { Privilege, Role } from '@prisma/client';
 import type { Response } from 'express';
 import { GetUser } from '../auth/decorators/active-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import type { ActiveUser } from '../auth/interfaces/jwt-payload.interface';
+import { Privileges } from '../auth/decorators/privileges.decorator';
 import {
   RegenerateTprReportDto,
   TprDetailExportQueryDto,
@@ -14,6 +15,7 @@ import { TprReportExcelService } from './tpr-report-excel.service';
 import { TprReportService } from './tpr-report.service';
 
 @Controller('tpr-reports')
+@Privileges(Privilege.VIEW_TPR_REPORT)
 export class TprReportController {
   constructor(
     private readonly reportService: TprReportService,

@@ -17,6 +17,8 @@ import { GetContainerByGkeyQueryDto, GetContainerMonitoringQueryDto } from './dt
 import { ContainerMonitoringDataDto } from './dto/container-monitoring-response.dto';
 import { Public } from '../../auth/decorators/public.decorator';
 import { SseOneTimeTokenGuard } from '../../auth/guards/sse-one-time-token.guard';
+import { Privilege } from '@prisma/client';
+import { Privileges } from '../../auth/decorators/privileges.decorator';
 
 
 interface MessageEvent {
@@ -27,6 +29,7 @@ interface MessageEvent {
 }
 
 @Controller('monitoring/containers')
+@Privileges(Privilege.VIEW_CONTAINER_MONITORING)
 export class ContainersMonitoringController {
     private readonly logger = new Logger(ContainersMonitoringController.name);
 

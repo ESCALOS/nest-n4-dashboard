@@ -24,10 +24,17 @@ export class SseOneTimeTokenGuard implements CanActivate {
 
         const key = CACHE_KEYS.sseOneTimeToken(token);
         const value = await this.redisService.getClient().call('GETDEL', key);
-        const isValid = typeof value === 'string' && value.length > 0;
-
-        if (!isValid) {
+        if (typeof value !== 'string' || value.length === 0) {
             throw new UnauthorizedException('Invalid or expired SSE token');
+        }
+
+        try {
+            const parsed = JSON.parse(value) as { userId?: unknown };
+            if (typeof parsed.userId !== 'string' || !parsed.userId) {
+                throw new Error('Missing user id');
+            }
+        } catch {
+            throw new UnauthorizedException('Invalid SSE token identity');
         }
 
         return true;

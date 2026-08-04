@@ -4,8 +4,9 @@ import {
     MinLength,
     IsOptional,
     IsEnum,
+    IsArray,
 } from 'class-validator';
-import { Role } from '@prisma/client';
+import { Privilege, Role } from '@prisma/client';
 
 export class CreateUserDto {
     @IsEmail()
@@ -22,4 +23,9 @@ export class CreateUserDto {
     @IsEnum(Role)
     @IsOptional()
     role?: Role;
+
+    @IsArray()
+    @IsEnum(Privilege, { each: true })
+    @IsOptional()
+    privileges?: Privilege[];
 }

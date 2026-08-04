@@ -18,6 +18,8 @@ import { MonitoringGeneralCargoResponse } from './dto/operation-vessel-response.
 import { SaveSspPermissionClassificationsDto } from './dto/save-ssp-permission-classifications.dto';
 import { Public } from '../../auth/decorators/public.decorator';
 import { SseOneTimeTokenGuard } from '../../auth/guards/sse-one-time-token.guard';
+import { Privilege } from '@prisma/client';
+import { Privileges } from '../../auth/decorators/privileges.decorator';
 
 interface MessageEvent {
   data: string | object;
@@ -27,6 +29,7 @@ interface MessageEvent {
 }
 
 @Controller('monitoring/general-cargo')
+@Privileges(Privilege.VIEW_GENERAL_CARGO_MONITORING)
 export class GeneralCargoController {
   private readonly logger = new Logger(GeneralCargoController.name);
 

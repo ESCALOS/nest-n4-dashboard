@@ -55,6 +55,7 @@ export class AuthService {
                 email: user.email,
                 name: user.name,
                 role: user.role,
+                privileges: user.privileges,
             },
         };
     }
@@ -100,6 +101,39 @@ export class AuthService {
         return {
             accessToken: tokens.accessToken,
             refreshToken: tokens.refreshToken,
+            user: {
+                id: storedToken.user.id,
+                email: storedToken.user.email,
+                name: storedToken.user.name,
+                role: storedToken.user.role,
+                privileges: storedToken.user.privileges,
+            },
+        };
+    }
+
+    async getCurrentUser(userId: string) {
+        const user = await this.prisma.user.findUnique({
+            where: { id: userId },
+            select: {
+                id: true,
+                email: true,
+                name: true,
+                role: true,
+                privileges: true,
+                isActive: true,
+            },
+        });
+
+        if (!user?.isActive) {
+            throw new UnauthorizedException('User not found or inactive');
+        }
+
+        return {
+            id: user.id,
+            email: user.email,
+            name: user.name,
+            role: user.role,
+            privileges: user.privileges,
         };
     }
 

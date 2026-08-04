@@ -12,6 +12,7 @@ import { GeneralCargoModule } from './monitoring/general-cargo/general-cargo.mod
 import { ContainersMonitoringModule } from './monitoring/containers/containers-monitoring.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
+import { PrivilegesGuard } from './auth/guards/privileges.guard';
 import { HealthController } from './health.controller';
 import { TprReportModule } from './tpr-reports/tpr-report.module';
 
@@ -54,6 +55,10 @@ import { TprReportModule } from './tpr-reports/tpr-report.module';
     {
       provide: APP_GUARD,
       useClass: RolesGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: PrivilegesGuard,
     },
   ],
 })

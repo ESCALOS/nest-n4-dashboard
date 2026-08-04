@@ -1,6 +1,7 @@
 import {
     Controller,
     Post,
+    Get,
     Patch,
     Body,
     HttpCode,
@@ -75,10 +76,15 @@ export class AuthController {
         };
     }
 
+    @Get('me')
+    async me(@GetUser() user: ActiveUser) {
+        return this.authService.getCurrentUser(user.userId);
+    }
+
     @Post('me')
     @HttpCode(HttpStatus.OK)
-    async me(@GetUser() user: ActiveUser) {
-        return user;
+    async legacyMe(@GetUser() user: ActiveUser) {
+        return this.authService.getCurrentUser(user.userId);
     }
 
     @Patch('me/password')

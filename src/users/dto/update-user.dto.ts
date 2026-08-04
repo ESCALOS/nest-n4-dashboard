@@ -4,8 +4,9 @@ import {
     IsEnum,
     IsBoolean,
     MinLength,
+    IsArray,
 } from 'class-validator';
-import { Role } from '@prisma/client';
+import { Privilege, Role } from '@prisma/client';
 
 export class UpdateUserDto {
     @IsString()
@@ -24,4 +25,9 @@ export class UpdateUserDto {
     @IsBoolean()
     @IsOptional()
     isActive?: boolean;
+
+    @IsArray()
+    @IsEnum(Privilege, { each: true })
+    @IsOptional()
+    privileges?: Privilege[];
 }

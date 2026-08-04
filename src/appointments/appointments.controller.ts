@@ -10,6 +10,8 @@ import {
 } from './dto/get-eir-print-data.dto';
 import { Public } from '../auth/decorators/public.decorator';
 import { SseOneTimeTokenGuard } from '../auth/guards/sse-one-time-token.guard';
+import { Privilege } from '@prisma/client';
+import { Privileges } from '../auth/decorators/privileges.decorator';
 
 interface MessageEvent {
   data: string | object;
@@ -35,6 +37,7 @@ export class AppointmentsController {
    * REST endpoint — get appointments in progress
    */
   @Get('in-progress')
+  @Privileges(Privilege.VIEW_IN_PROGRESS_APPOINTMENTS)
   async getAppointmentsInProgress(): Promise<AppointmentsResponseDto> {
     return this.appointmentsService.getAppointmentsInProgress();
   }
@@ -43,6 +46,7 @@ export class AppointmentsController {
    * REST endpoint — get general cargo appointments in progress
    */
   @Get('in-progress/general-cargo')
+  @Privileges(Privilege.VIEW_GENERAL_CARGO_IN_PROGRESS_APPOINTMENTS)
   async getGeneralCargoAppointmentsInProgress(): Promise<AppointmentsResponseDto> {
     return this.appointmentsService.getGeneralCargoAppointmentsInProgress();
   }
@@ -51,6 +55,7 @@ export class AppointmentsController {
    * REST endpoint — get EIR print data by appointment id.
    */
   @Get('in-progress/:appointmentId/eir-print-data')
+  @Privileges(Privilege.VIEW_IN_PROGRESS_APPOINTMENTS)
   async getEirPrintData(
     @Param() params: GetEirPrintDataDto,
   ): Promise<AppointmentEirPrintDataDto> {
@@ -62,6 +67,7 @@ export class AppointmentsController {
    * Direct DB lookup for testing when the appointment is no longer in progress.
    */
   @Get('test/:appointmentId/eir-print-data')
+  @Privileges(Privilege.VIEW_IN_PROGRESS_APPOINTMENTS)
   async getEirPrintDataForTesting(
     @Param() params: GetEirPrintDataDto,
   ): Promise<AppointmentEirPrintDataDto> {
@@ -77,6 +83,7 @@ export class AppointmentsController {
   @Public()
   @UseGuards(SseOneTimeTokenGuard)
   @Sse('in-progress/stream')
+  @Privileges(Privilege.VIEW_IN_PROGRESS_APPOINTMENTS)
   stream(): Observable<MessageEvent> {
     this.logger.log('SSE connection opened — appointments in progress');
 
@@ -120,6 +127,7 @@ export class AppointmentsController {
   @Public()
   @UseGuards(SseOneTimeTokenGuard)
   @Sse('in-progress/general-cargo/stream')
+  @Privileges(Privilege.VIEW_GENERAL_CARGO_IN_PROGRESS_APPOINTMENTS)
   generalCargoStream(): Observable<MessageEvent> {
     this.logger.log('SSE connection opened — general cargo appointments in progress');
 
@@ -164,6 +172,7 @@ export class AppointmentsController {
    * REST endpoint — get pending appointments
    */
   @Get('pending')
+  @Privileges(Privilege.VIEW_PENDING_APPOINTMENTS)
   async getPendingAppointments(): Promise<PendingAppointmentsResponseDto> {
     return this.appointmentsService.getPendingAppointments();
   }
@@ -177,6 +186,7 @@ export class AppointmentsController {
   @Public()
   @UseGuards(SseOneTimeTokenGuard)
   @Sse('pending/stream')
+  @Privileges(Privilege.VIEW_PENDING_APPOINTMENTS)
   pendingStream(): Observable<MessageEvent> {
     this.logger.log('SSE connection opened — pending appointments');
 

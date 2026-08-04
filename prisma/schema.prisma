@@ -11,6 +11,15 @@ enum Role {
   USER
 }
 
+enum Privilege {
+  VIEW_GENERAL_CARGO_MONITORING
+  VIEW_CONTAINER_MONITORING
+  VIEW_PENDING_APPOINTMENTS
+  VIEW_IN_PROGRESS_APPOINTMENTS
+  VIEW_GENERAL_CARGO_IN_PROGRESS_APPOINTMENTS
+  VIEW_TPR_REPORT
+}
+
 enum SspPermissionScope {
   INTERNAL
   EXTERNAL
@@ -22,6 +31,7 @@ model User {
   passwordHash String   @map("password_hash")
   name         String?
   role         Role     @default(USER)
+  privileges   Privilege[] @default([])
   isActive     Boolean  @default(true) @map("is_active")
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
