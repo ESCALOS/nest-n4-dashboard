@@ -85,14 +85,11 @@ export class CacheManagementService {
    * Reset BL items cache for a specific carrier visit
    */
   async resetBLItems(cvGkey: number): Promise<void> {
-    // Reset both SSP and OS patterns
-    const asKey = CACHE_KEYS.blItems(cvGkey, true);
-    const nasKey = CACHE_KEYS.blItems(cvGkey, false);
-
-    await Promise.all([
-      this.redisService.del(asKey),
-      this.redisService.del(nasKey),
-    ]);
+    await Promise.all(
+      Object.values(OperationType).map((operationType) =>
+        this.redisService.del(CACHE_KEYS.blItems(cvGkey, operationType)),
+      ),
+    );
 
     this.logger.log(`Reset BL items cache for cvGkey ${cvGkey}`);
   }
@@ -190,6 +187,7 @@ export class CacheManagementService {
       [OperationType.STOCKPILING]: [],
       [OperationType.INDIRECT_LOADING]: [],
       [OperationType.DISPATCHING]: [],
+      [OperationType.DISCHARGING]: [],
       [OperationType.DIRECT_LOADING]: [],
     };
 

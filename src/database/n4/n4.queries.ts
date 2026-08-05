@@ -226,7 +226,9 @@ export const N4Queries = {
     FROM crg_bl_item cbi
     INNER JOIN crg_bills_of_lading cbol ON cbol.gkey = cbi.bl_gkey
     INNER JOIN ref_commodity rc ON rc.gkey = cbi.commodity_gkey
-    WHERE cbol.cv_gkey = @cvGkey AND (cbi.flex_string01 <> 'Y' OR cbi.flex_string01 IS NULL)
+    WHERE cbol.cv_gkey = @cvGkey
+      AND UPPER(LTRIM(RTRIM(cbol.category))) = @blCategory
+      AND (cbi.flex_string01 <> 'Y' OR cbi.flex_string01 IS NULL)
   `,
 
     /**
@@ -244,7 +246,9 @@ export const N4Queries = {
     FROM crg_bl_item cbi
     INNER JOIN crg_bills_of_lading cbol ON cbol.gkey = cbi.bl_gkey
     INNER JOIN ref_commodity rc ON rc.gkey = cbi.commodity_gkey
-    WHERE cbol.cv_gkey = @cvGkey AND cbi.flex_string01 = 'Y'
+    WHERE cbol.cv_gkey = @cvGkey
+      AND UPPER(LTRIM(RTRIM(cbol.category))) = @blCategory
+      AND cbi.flex_string01 = 'Y'
   `,
 
     /**
@@ -262,6 +266,11 @@ export const N4Queries = {
         INNER JOIN crg_bills_of_lading cbol ON cbol.gkey = cbi.bl_gkey
         INNER JOIN ref_commodity rc ON rc.gkey = cbi.commodity_gkey
         WHERE cbol.cv_gkey = @cvGkey
+            AND UPPER(LTRIM(RTRIM(cbol.category))) = @blCategory
+            AND (
+                (@isAs = 1 AND cbi.flex_string01 = 'Y')
+                OR (@isAs = 0 AND (cbi.flex_string01 <> 'Y' OR cbi.flex_string01 IS NULL))
+            )
             AND cbi.nbr LIKE @blPrefix
     `,
 

@@ -11,8 +11,8 @@ export const CACHE_KEYS = {
   vesselOperations: (manifestId: string, operationType: string) => `monitoring:general-cargo:operation-vessel:${manifestId}:${operationType}`,
 
   holds: (vvdGkey: number) => `monitoring:general-cargo:holds:${vvdGkey}`,
-  blItems: (cvGkey: number, isAs: boolean) =>
-    `monitoring:general-cargo:blitems:${cvGkey}:${isAs ? 'AS' : 'NAS'}`,
+  blItems: (cvGkey: number, operationType: string) =>
+    `monitoring:general-cargo:blitems:v2:${cvGkey}:${operationType}`,
   transactions: (manifestId: string, operationType: string) =>
     `monitoring:general-cargo:transactions:${manifestId}:${operationType}`,
   holdAlerts: (manifestId: string, operationType: string) =>

@@ -299,10 +299,15 @@ export class N4Service implements OnModuleInit, OnModuleDestroy {
   // BL ITEMS METHODS
   // ============================================
 
-  async getBLItems(cvGkey: number, isAs: boolean): Promise<VesselOperationItemResult[]> {
+  async getBLItems(
+    cvGkey: number,
+    isAs: boolean,
+    blCategory: 'IMPRT' | 'EXPRT',
+  ): Promise<VesselOperationItemResult[]> {
     try {
       const request = this.pool.request();
       request.input('cvGkey', sql.BigInt, cvGkey);
+      request.input('blCategory', sql.VarChar, blCategory);
 
       const result = await this.executeQuery<VesselOperationItemResult>(
         request,
@@ -319,11 +324,15 @@ export class N4Service implements OnModuleInit, OnModuleDestroy {
   async getBLItemsByPrefix(
     cvGkey: number,
     prefix: 'SSP' | 'OS',
+    isAs: boolean,
+    blCategory: 'IMPRT' | 'EXPRT',
   ): Promise<VesselOperationItemResult[]> {
     try {
       const request = this.pool.request();
       request.input('cvGkey', sql.BigInt, cvGkey);
       request.input('blPrefix', sql.VarChar, `${prefix}%`);
+      request.input('isAs', sql.Bit, isAs);
+      request.input('blCategory', sql.VarChar, blCategory);
 
       const result = await this.executeQuery<VesselOperationItemResult>(
         request,

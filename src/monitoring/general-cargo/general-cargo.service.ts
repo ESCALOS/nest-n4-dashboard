@@ -11,7 +11,12 @@ import { RedisService } from 'src/database/redis/redis.service';
 import { CACHE_KEYS } from 'src/common/constants/cache-keys.constant';
 import { ManifestDto } from './dto/manifest.dto';
 import { OperationVesselItemDto } from './dto/OperationVesselItem.dto';
-import { IS_BL_ITEM_AS, OperationType, IS_GATE_TRANSACTION } from './enums/operation-type.enum';
+import {
+  BL_CATEGORY,
+  IS_BL_ITEM_AS,
+  OperationType,
+  IS_GATE_TRANSACTION,
+} from './enums/operation-type.enum';
 import { TransactionDto } from './dto/transaction.dto';
 import { HoldAlertDto } from './dto/hold-alert.dto';
 import { CompletionAlertDto } from './dto/completion-alert.dto';
@@ -45,6 +50,11 @@ export class GeneralCargoService {
     return nbr.trim().toUpperCase().startsWith('SSP');
   }
 
+  private isDispatchOperation(operationType: OperationType): boolean {
+    return operationType === OperationType.DISPATCHING
+      || operationType === OperationType.DISCHARGING;
+  }
+
   private toInt(value: number | string | null | undefined): number {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : 0;
@@ -72,8 +82,8 @@ export class GeneralCargoService {
     manifest: ManifestDto;
     sspBlItems: OperationVesselItemDto[];
   }> {
-    if (operationType !== OperationType.DISPATCHING) {
-      throw new BadRequestException('La clasificación SSP solo aplica a operativa de despacho');
+    if (!this.isDispatchOperation(operationType)) {
+      throw new BadRequestException('La clasificación SSP solo aplica a operativas de despacho o descarga');
     }
 
     const manifest = await this.getManifest(manifestId);
@@ -286,13 +296,11 @@ export class GeneralCargoService {
     resolvedManifest?: ManifestDto,
   ): Promise<OperationVesselItemDto[]> {
     const manifest = resolvedManifest ?? await this.getManifest(manifestId);
-    const usesPrefixRule =
-      operationType === OperationType.DISPATCHING
+    const usesPrefixRule = this.isDispatchOperation(operationType)
       || operationType === OperationType.STOCKPILING;
     const isAs = IS_BL_ITEM_AS[operationType];
-    const cacheKey = usesPrefixRule
-      ? `monitoring:general-cargo:blitems:${manifest.gkey}:${operationType}`
-      : CACHE_KEYS.blItems(manifest.gkey, isAs);
+    const blCategory = BL_CATEGORY[operationType];
+    const cacheKey = CACHE_KEYS.blItems(manifest.gkey, operationType);
 
     const cached =
       await this.redisService.getJson<OperationVesselItemDto[]>(cacheKey);
@@ -308,8 +316,8 @@ export class GeneralCargoService {
 
     if (usesPrefixRule) {
       const [blItemsNas, blItemsAs] = await Promise.all([
-        this.n4Service.getBLItems(manifest.gkey, false),
-        this.n4Service.getBLItems(manifest.gkey, true),
+        this.n4Service.getBLItems(manifest.gkey, false, blCategory),
+        this.n4Service.getBLItems(manifest.gkey, true, blCategory),
       ]);
 
       blItemsFromDb = isAs ? blItemsAs : blItemsNas;
@@ -317,23 +325,37 @@ export class GeneralCargoService {
         [95, 182].includes(this.toInt(item.commodity_gkey)),
       );
     } else {
-      blItemsFromDb = await this.n4Service.getBLItems(manifest.gkey, isAs);
+      blItemsFromDb = await this.n4Service.getBLItems(
+        manifest.gkey,
+        isAs,
+        blCategory,
+      );
       hasMaizCommodity = blItemsFromDb.some((item) =>
         [95, 182].includes(this.toInt(item.commodity_gkey)),
       );
     }
 
     const results = hasMaizCommodity
-      ? operationType === OperationType.DISPATCHING
-        ? await this.n4Service.getBLItemsByPrefix(manifest.gkey, 'SSP')
+      ? this.isDispatchOperation(operationType)
+        ? await this.n4Service.getBLItemsByPrefix(
+          manifest.gkey,
+          'SSP',
+          isAs,
+          blCategory,
+        )
         : operationType === OperationType.STOCKPILING
-          ? await this.n4Service.getBLItemsByPrefix(manifest.gkey, 'OS')
+          ? await this.n4Service.getBLItemsByPrefix(
+            manifest.gkey,
+            'OS',
+            isAs,
+            blCategory,
+          )
           : blItemsFromDb
       : blItemsFromDb;
 
-    if (hasMaizCommodity && (operationType === OperationType.DISPATCHING || operationType === OperationType.STOCKPILING)) {
+    if (hasMaizCommodity && usesPrefixRule) {
       this.logger.log(
-        `Aplicando regla especial MAÍZ para manifest ${manifestId}: ${operationType === OperationType.DISPATCHING ? 'SSP' : 'OS'}`,
+        `Aplicando regla especial MAÍZ para manifest ${manifestId}: ${this.isDispatchOperation(operationType) ? 'SSP' : 'OS'}`,
       );
     }
 
@@ -564,13 +586,8 @@ export class GeneralCargoService {
     operationType: OperationType,
   ): Promise<OperationVesselItemDto[]> {
     const manifest = await this.getManifest(manifestId);
-    const usesPrefixRule =
-      operationType === OperationType.DISPATCHING
-      || operationType === OperationType.STOCKPILING;
     const isAs = IS_BL_ITEM_AS[operationType];
-    const cacheKey = usesPrefixRule
-      ? `monitoring:general-cargo:blitems:${manifest.gkey}:${operationType}`
-      : CACHE_KEYS.blItems(manifest.gkey, isAs);
+    const cacheKey = CACHE_KEYS.blItems(manifest.gkey, operationType);
     await this.redisService.del(cacheKey);
     this.logger.log(`Cache invalidated for BL items cvGkey ${manifest.gkey} isAs ${isAs}`);
     return this.getBLItems(manifestId, operationType, manifest);
@@ -687,7 +704,7 @@ export class GeneralCargoService {
       this.getHoldAlerts(manifestId, operationType),
     ]);
 
-    const supportsSspClassification = operationType === OperationType.DISPATCHING
+    const supportsSspClassification = this.isDispatchOperation(operationType)
       && blItems.some((item) => [95, 182].includes(item.commodity_gkey))
       && blItems.some((item) => this.isSspPermission(item.nbr));
 
