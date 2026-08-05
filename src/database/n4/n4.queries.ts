@@ -839,7 +839,7 @@ export const N4Queries = {
             WHEN 'DM' THEN 'Despacho'
             WHEN 'RM' THEN 'Devolución'
             WHEN 'DI' THEN 'Ingreso Import'
-            WHEN 'DE' THEN 'Ingreso Export'
+            WHEN 'DE' THEN 'Retiro Full'
             ELSE gat.sub_type
         END AS Tipo,
         pod.id AS PuertoDescarga,
@@ -1239,7 +1239,7 @@ export const N4Queries = {
             WHEN 'DM' THEN 'Despacho'
             WHEN 'RM' THEN 'Devolución'
             WHEN 'DI' THEN 'Ingreso Import'
-            WHEN 'DE' THEN 'Ingreso Export'
+            WHEN 'DE' THEN 'Retiro Full'
             ELSE gat.sub_type
         END AS Tipo,
         eir.TiempoEir
