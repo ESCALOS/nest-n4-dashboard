@@ -360,6 +360,7 @@ export class ContainersMonitoringService {
             pod: row.pod ?? '',
             fds: row.fds ?? '',
             appointment: row.appointment ?? '',
+            operator: row.operator ?? '',
             booking: row.booking,
             container_number: row.container_number ?? '',
             iso_code: row.iso_code ?? '',

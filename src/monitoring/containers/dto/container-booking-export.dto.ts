@@ -7,6 +7,7 @@ export interface ContainerBookingExportItemDto {
     pod: string;
     fds: string;
     appointment: string;
+    operator: string;
     booking: string;
     container_number: string;
     iso_code: string;

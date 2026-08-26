@@ -614,6 +614,7 @@ export const N4Queries = {
              ELSE CONVERT(VARCHAR(10), appointment.start_date, 103) + ' '
                 + LEFT(CONVERT(VARCHAR(8), appointment.start_date, 108), 5)
         END AS appointment,
+        appointment.operator AS operator,
         booking.nbr AS booking,
         unit.id AS container_number,
         COALESCE(actual_type.id, requested_type.id) AS iso_code,
@@ -673,7 +674,7 @@ export const N4Queries = {
         ORDER BY visit_fcy.gkey DESC
     ) fcy
     OUTER APPLY (
-        SELECT TOP 1 slot.start_date
+        SELECT TOP 1 slot.start_date, appt.creator AS operator
         FROM road_gate_appointment appt
         LEFT JOIN road_appt_time_slot slot ON slot.gkey = appt.time_slot_gkey
         WHERE appt.order_gkey = booking.gkey

@@ -282,6 +282,7 @@ export interface ContainerBookingExportResult {
     pod: string | null;
     fds: string | null;
     appointment: string | null;
+    operator: string | null;
     booking: string;
     container_number: string | null;
     iso_code: string | null;
