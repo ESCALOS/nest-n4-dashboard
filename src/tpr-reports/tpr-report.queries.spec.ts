@@ -1,6 +1,33 @@
 import { TprReportQueries } from './tpr-report.queries';
 
 describe('TprReportQueries', () => {
+  it('counts each Fetch, Carry and Put equipment participation within the month', () => {
+    expect(TprReportQueries.equipmentSummary.match(/UNION ALL/g)).toHaveLength(
+      2,
+    );
+    expect(TprReportQueries.equipmentSummary).toContain('mov.che_fetch');
+    expect(TprReportQueries.equipmentSummary).toContain('mov.che_carry');
+    expect(TprReportQueries.equipmentSummary).toContain('mov.che_put');
+    expect(TprReportQueries.equipmentSummary).toContain(
+      'mov.t_put>=@fecha_inicio',
+    );
+    expect(TprReportQueries.equipmentSummary).toContain('mov.t_put<@fecha_fin');
+    expect(TprReportQueries.equipmentSummary).toContain(
+      "('81013063','Performance Equipment SC Total Moves')",
+    );
+  });
+
+  it('uses the closed equipment catalogue and supports ownership filtering', () => {
+    expect(TprReportQueries.equipmentDetails).toContain(
+      "('81013073','Performance Equipment RST Total Moves','RS06','RENTED')",
+    );
+    expect(TprReportQueries.equipmentDetails).toContain(
+      "('81013073','Performance Equipment RST Total Moves','RS12','RENTED')",
+    );
+    expect(TprReportQueries.equipmentDetails).toContain(
+      "(@ownership='ALL' OR cem.ownership=@ownership)",
+    );
+  });
   it('does not expose Shifter topics or queries', () => {
     expect(TprReportQueries.containerSummary).not.toContain('5X114');
     expect(TprReportQueries.containerSummary).not.toContain('srv_event');

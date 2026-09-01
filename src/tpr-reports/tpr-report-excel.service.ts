@@ -4,8 +4,10 @@ import ExcelJS from 'exceljs';
 import { TPR_VESSEL_CALLS_UNIQUE_ID } from './tpr-report.defaults';
 import {
   TprDetailKind,
+  TprEquipmentOwnership,
   TprDetailReportType,
   TprDetailResponse,
+  TprReportType,
   TprSummaryResponse,
 } from './tpr-report.types';
 import { TprReportService } from './tpr-report.service';
@@ -58,12 +60,14 @@ export class TprReportExcelService {
     period: string,
     reportType: TprDetailReportType,
     uniqueId: string,
+    ownership: TprEquipmentOwnership = TprEquipmentOwnership.ALL,
   ): Promise<void> {
     const safeUniqueId = uniqueId.replace(/[^A-Za-z0-9_-]/g, '_');
     const filename = `Reporte_TPR_Detalle_${safeUniqueId}_${period}.xlsx`;
     const workbook = this.createWorkbook(response, filename);
     const worksheet = workbook.addWorksheet('Detalle');
     const isVesselCalls = uniqueId === TPR_VESSEL_CALLS_UNIQUE_ID;
+    const isEquipment = reportType === TprReportType.PERFORMANCE_EQUIPMENT;
     worksheet.columns = isVesselCalls
       ? [
           {
@@ -75,26 +79,32 @@ export class TprReportExcelService {
           { header: 'MANIFIESTO', key: 'manifest', width: 18 },
           { header: 'NAVE', key: 'vessel', width: 28 },
         ]
-      : [
-          {
-            header: 'FECHA',
-            key: 'movementDate',
-            width: 22,
-            style: { numFmt: 'd/mm/yyyy hh:mm' },
-          },
-          { header: 'CONTENEDOR', key: 'container', width: 16 },
-          { header: 'OPERACIÓN', key: 'operation', width: 16 },
-          { header: 'ESTADO', key: 'status', width: 12 },
-          { header: 'EQUIPO', key: 'equipment', width: 12 },
-          { header: 'TAMAÑO', key: 'size', width: 10 },
-          { header: 'ISO', key: 'iso', width: 12 },
-          { header: 'TIPO CONTENEDOR', key: 'containerType', width: 30 },
-          { header: 'CATEGORY', key: 'category', width: 14 },
-          { header: 'LÍNEA', key: 'shippingLine', width: 14 },
-          { header: 'NOMBRE LÍNEA', key: 'shippingLineName', width: 30 },
-          { header: 'MANIFIESTO', key: 'manifest', width: 18 },
-          { header: 'NAVE', key: 'vessel', width: 28 },
-        ];
+      : isEquipment
+        ? [
+            { header: 'EQUIPO', key: 'equipment', width: 16 },
+            { header: 'TIPO', key: 'ownership', width: 16 },
+            { header: 'TOTAL MOVIMIENTOS', key: 'total', width: 22 },
+          ]
+        : [
+            {
+              header: 'FECHA',
+              key: 'movementDate',
+              width: 22,
+              style: { numFmt: 'd/mm/yyyy hh:mm' },
+            },
+            { header: 'CONTENEDOR', key: 'container', width: 16 },
+            { header: 'OPERACIÓN', key: 'operation', width: 16 },
+            { header: 'ESTADO', key: 'status', width: 12 },
+            { header: 'EQUIPO', key: 'equipment', width: 12 },
+            { header: 'TAMAÑO', key: 'size', width: 10 },
+            { header: 'ISO', key: 'iso', width: 12 },
+            { header: 'TIPO CONTENEDOR', key: 'containerType', width: 30 },
+            { header: 'CATEGORY', key: 'category', width: 14 },
+            { header: 'LÍNEA', key: 'shippingLine', width: 14 },
+            { header: 'NOMBRE LÍNEA', key: 'shippingLineName', width: 30 },
+            { header: 'MANIFIESTO', key: 'manifest', width: 18 },
+            { header: 'NAVE', key: 'vessel', width: 28 },
+          ];
     this.styleHeader(worksheet);
 
     const batchSize = this.reportService.exportBatchSize;
@@ -107,6 +117,7 @@ export class TprReportExcelService {
         uniqueId,
         page,
         batchSize,
+        ownership,
       );
       for (const row of detail.rows) {
         if (detail.detailKind === TprDetailKind.VESSEL_CALLS && 'atd' in row) {
@@ -115,6 +126,20 @@ export class TprReportExcelService {
               atd: new Date(row.atd),
               manifest: row.manifest,
               vessel: row.vessel ?? 'No aplica',
+            })
+            .commit();
+        } else if (
+          detail.detailKind === TprDetailKind.EQUIPMENT_MOVES &&
+          'ownership' in row
+        ) {
+          worksheet
+            .addRow({
+              equipment: row.equipment,
+              ownership:
+                row.ownership === TprEquipmentOwnership.INTERNAL
+                  ? 'Interna'
+                  : 'Alquilada',
+              total: row.total,
             })
             .commit();
         } else if ('movementDate' in row) {

@@ -271,7 +271,88 @@ transacciones_clasificadas AS (
 )
 `;
 
+const EQUIPMENT_CTES = `
+WITH equipment_catalog AS (
+    SELECT * FROM (VALUES
+        ('81013053','Performance Equipment TT Total Moves','TT01','INTERNAL'),
+        ('81013053','Performance Equipment TT Total Moves','TT02','INTERNAL'),
+        ('81013053','Performance Equipment TT Total Moves','TT03','INTERNAL'),
+        ('81013053','Performance Equipment TT Total Moves','TT04','INTERNAL'),
+        ('81013053','Performance Equipment TT Total Moves','TT05','INTERNAL'),
+        ('81013053','Performance Equipment TT Total Moves','TT06','INTERNAL'),
+        ('81013053','Performance Equipment TT Total Moves','TT07','INTERNAL'),
+        ('81013053','Performance Equipment TT Total Moves','TT08','INTERNAL'),
+        ('81013053','Performance Equipment TT Total Moves','TT09','INTERNAL'),
+        ('81013073','Performance Equipment RST Total Moves','RS01','INTERNAL'),
+        ('81013073','Performance Equipment RST Total Moves','RS02','INTERNAL'),
+        ('81013073','Performance Equipment RST Total Moves','RS03','INTERNAL'),
+        ('81013073','Performance Equipment RST Total Moves','RS04','INTERNAL'),
+        ('81013073','Performance Equipment RST Total Moves','RS05','INTERNAL'),
+        ('81013073','Performance Equipment RST Total Moves','RS06','RENTED'),
+        ('81013073','Performance Equipment RST Total Moves','RS12','RENTED'),
+        ('81013093','Performance Equipment ECH Total Moves','ECH01','INTERNAL'),
+        ('81013093','Performance Equipment ECH Total Moves','ECH02','INTERNAL')
+    ) v(unique_id,account_description,equipment,ownership)
+),
+equipment_topics AS (
+    SELECT * FROM (VALUES
+        ('81013053','Performance Equipment TT Total Moves'),
+        ('81013063','Performance Equipment SC Total Moves'),
+        ('81013073','Performance Equipment RST Total Moves'),
+        ('81013093','Performance Equipment ECH Total Moves')
+    ) v(unique_id,account_description)
+),
+equipment_moves AS (
+    SELECT UPPER(LTRIM(RTRIM(fetc.short_name))) AS equipment
+    FROM inv_move_event mov
+    LEFT JOIN xps_che fetc ON fetc.gkey=mov.che_fetch
+    WHERE mov.move_kind='YARD' AND fetc.short_name IS NOT NULL
+      AND mov.t_put>=@fecha_inicio AND mov.t_put<@fecha_fin
+    UNION ALL
+    SELECT UPPER(LTRIM(RTRIM(carry.short_name)))
+    FROM inv_move_event mov
+    LEFT JOIN xps_che carry ON carry.gkey=mov.che_carry
+    WHERE mov.move_kind='YARD' AND carry.short_name IS NOT NULL
+      AND mov.t_put>=@fecha_inicio AND mov.t_put<@fecha_fin
+    UNION ALL
+    SELECT UPPER(LTRIM(RTRIM(put.short_name)))
+    FROM inv_move_event mov
+    LEFT JOIN xps_che put ON put.gkey=mov.che_put
+    WHERE mov.move_kind='YARD' AND put.short_name IS NOT NULL
+      AND mov.t_put>=@fecha_inicio AND mov.t_put<@fecha_fin
+),
+classified_equipment_moves AS (
+    SELECT ec.unique_id,ec.account_description,ec.equipment,ec.ownership
+    FROM equipment_moves em
+    INNER JOIN equipment_catalog ec ON ec.equipment=em.equipment
+)
+`;
+
 export const TprReportQueries = {
+  equipmentSummary: `
+${EQUIPMENT_CTES}
+SELECT et.unique_id,et.account_description,COUNT(cem.equipment) AS total
+FROM equipment_topics et
+LEFT JOIN classified_equipment_moves cem ON cem.unique_id=et.unique_id
+GROUP BY et.unique_id,et.account_description;
+`,
+
+  equipmentDetails: `
+${EQUIPMENT_CTES}
+SELECT
+    cem.account_description,
+    cem.equipment,
+    cem.ownership,
+    COUNT(*) AS total,
+    COUNT(*) OVER() AS total_count,
+    SUM(COUNT(*)) OVER() AS filtered_total
+FROM classified_equipment_moves cem
+WHERE cem.unique_id=@unique_id
+  AND (@ownership='ALL' OR cem.ownership=@ownership)
+GROUP BY cem.account_description,cem.equipment,cem.ownership
+ORDER BY total DESC,cem.equipment
+OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY;
+`,
   containerSummary: `
 ${CONTAINER_CTES}
 SELECT

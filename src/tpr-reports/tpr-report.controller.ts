@@ -44,6 +44,7 @@ export class TprReportController {
       query.period,
       query.reportType,
       query.uniqueId,
+      query.ownership,
     );
   }
 
@@ -60,6 +61,7 @@ export class TprReportController {
       query.uniqueId,
       query.page,
       query.limit,
+      query.ownership,
     );
   }
 

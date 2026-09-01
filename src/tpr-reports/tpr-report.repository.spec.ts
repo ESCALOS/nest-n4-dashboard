@@ -3,7 +3,11 @@ import { N4Service } from '../database/n4/n4.service';
 import { TPR_VESSEL_CALLS_UNIQUE_ID } from './tpr-report.defaults';
 import { TprReportQueries } from './tpr-report.queries';
 import { TprReportRepository } from './tpr-report.repository';
-import { TprDetailKind, TprReportType } from './tpr-report.types';
+import {
+  TprDetailKind,
+  TprEquipmentOwnership,
+  TprReportType,
+} from './tpr-report.types';
 
 describe('TprReportRepository', () => {
   const range = {
@@ -140,6 +144,43 @@ describe('TprReportRepository', () => {
           vessel: 'CALL TEST',
         },
       ],
+    });
+  });
+
+  it('returns equipment totals grouped by ownership and the movement subtotal', async () => {
+    const { repository, n4Service } = createSubject();
+    n4Service.query.mockResolvedValue({
+      recordset: [
+        {
+          account_description: 'Performance Equipment RST Total Moves',
+          equipment: 'RS06',
+          ownership: 'RENTED',
+          total: 7,
+          total_count: 1,
+          filtered_total: 7,
+        },
+      ],
+    });
+
+    const result = await repository.getDetails(
+      range,
+      TprReportType.PERFORMANCE_EQUIPMENT,
+      '81013073',
+      0,
+      100,
+      TprEquipmentOwnership.RENTED,
+    );
+
+    expect(n4Service.query).toHaveBeenCalledWith(
+      TprReportQueries.equipmentDetails,
+      'tprEquipmentDetails',
+      expect.any(Function),
+    );
+    expect(result).toMatchObject({
+      detailKind: TprDetailKind.EQUIPMENT_MOVES,
+      total: 1,
+      filteredTotal: 7,
+      rows: [{ equipment: 'RS06', ownership: 'RENTED', total: 7 }],
     });
   });
 });

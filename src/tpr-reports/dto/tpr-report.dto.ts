@@ -9,7 +9,7 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
-import { TprReportType } from '../tpr-report.types';
+import { TprEquipmentOwnership, TprReportType } from '../tpr-report.types';
 
 const PERIOD_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
 const UNIQUE_ID_PATTERN = /^[A-Za-z0-9_-]+$/;
@@ -28,8 +28,15 @@ export class TprDetailQueryDto {
   @Matches(PERIOD_PATTERN, { message: 'period must use YYYY-MM format' })
   period: string;
 
-  @IsIn([TprReportType.CONTAINER_VESSEL, TprReportType.TRUCK_IN_OUT])
-  reportType: TprReportType.CONTAINER_VESSEL | TprReportType.TRUCK_IN_OUT;
+  @IsIn([
+    TprReportType.CONTAINER_VESSEL,
+    TprReportType.TRUCK_IN_OUT,
+    TprReportType.PERFORMANCE_EQUIPMENT,
+  ])
+  reportType: Exclude<TprReportType, TprReportType.ALL>;
+
+  @IsEnum(TprEquipmentOwnership)
+  ownership: TprEquipmentOwnership = TprEquipmentOwnership.ALL;
 
   @IsString()
   @MaxLength(30)
@@ -55,8 +62,15 @@ export class TprDetailExportQueryDto {
   @Matches(PERIOD_PATTERN, { message: 'period must use YYYY-MM format' })
   period: string;
 
-  @IsIn([TprReportType.CONTAINER_VESSEL, TprReportType.TRUCK_IN_OUT])
-  reportType: TprReportType.CONTAINER_VESSEL | TprReportType.TRUCK_IN_OUT;
+  @IsIn([
+    TprReportType.CONTAINER_VESSEL,
+    TprReportType.TRUCK_IN_OUT,
+    TprReportType.PERFORMANCE_EQUIPMENT,
+  ])
+  reportType: Exclude<TprReportType, TprReportType.ALL>;
+
+  @IsEnum(TprEquipmentOwnership)
+  ownership: TprEquipmentOwnership = TprEquipmentOwnership.ALL;
 
   @IsString()
   @MaxLength(30)

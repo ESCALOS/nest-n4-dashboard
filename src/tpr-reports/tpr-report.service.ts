@@ -18,6 +18,7 @@ import {
 import {
   TprCachedDetailPage,
   TprCachedSummary,
+  TprEquipmentOwnership,
   TprDetailReportType,
   TprDetailResponse,
   TprReportType,
@@ -100,6 +101,7 @@ export class TprReportService {
     uniqueId: string,
     page: number,
     limit: number,
+    ownership: TprEquipmentOwnership = TprEquipmentOwnership.ALL,
   ): Promise<TprDetailResponse> {
     if (limit > this.detailMaxLimit) {
       throw new BadRequestException(
@@ -125,6 +127,7 @@ export class TprReportService {
       uniqueId,
       page,
       limit,
+      ownership,
     );
     const cached = await this.readCache<TprCachedDetailPage>(cacheKey);
     if (cached.value) {
@@ -146,12 +149,14 @@ export class TprReportService {
       uniqueId,
       (page - 1) * limit,
       limit,
+      ownership,
     );
     const payload: TprCachedDetailPage = {
       generatedAt: new Date().toISOString(),
       accountDescription: topic.accountDescription,
       total: result.total,
       detailKind: result.detailKind,
+      filteredTotal: result.filteredTotal,
       rows: result.rows,
     };
     if (cached.available) {
@@ -236,15 +241,20 @@ export class TprReportService {
   private async buildSummaryPayload(period: string): Promise<TprCachedSummary> {
     const range = this.periodRange(period);
     const startedAt = Date.now();
-    const [containerRows, truckRows] = await Promise.all([
+    const [containerRows, truckRows, equipmentRows] = await Promise.all([
       this.repository.getContainerSummary(range),
       this.repository.getTruckSummary(range),
+      this.repository.getEquipmentSummary(range),
     ]);
-    const rows = [...containerRows, ...truckRows].sort((a, b) => {
-      const aOrder = this.topicOrder.get(a.uniqueId) ?? Number.MAX_SAFE_INTEGER;
-      const bOrder = this.topicOrder.get(b.uniqueId) ?? Number.MAX_SAFE_INTEGER;
-      return aOrder - bOrder || a.uniqueId.localeCompare(b.uniqueId);
-    });
+    const rows = [...containerRows, ...truckRows, ...equipmentRows].sort(
+      (a, b) => {
+        const aOrder =
+          this.topicOrder.get(a.uniqueId) ?? Number.MAX_SAFE_INTEGER;
+        const bOrder =
+          this.topicOrder.get(b.uniqueId) ?? Number.MAX_SAFE_INTEGER;
+        return aOrder - bOrder || a.uniqueId.localeCompare(b.uniqueId);
+      },
+    );
     this.logger.log(
       `TPR summary ${period} generated with ${rows.length} topics in ${Date.now() - startedAt}ms`,
     );
@@ -260,10 +270,9 @@ export class TprReportService {
     payload: TprCachedSummary,
     cached: boolean,
   ): TprSummaryResponse {
-    const operationalRows =
-      type === TprReportType.ALL
-        ? payload.rows
-        : payload.rows.filter((row) => row.reportType === type);
+    const operationalRows = payload.rows.filter((row) =>
+      type === TprReportType.ALL ? true : row.reportType === type,
+    );
     const rows: TprSummaryRow[] = operationalRows.map((row) => ({
       uniqueId: row.uniqueId,
       accountDescription: row.accountDescription,
@@ -272,7 +281,18 @@ export class TprReportService {
       hasDetails: row.supportsDetails && row.total > 0,
     }));
     if (type === TprReportType.ALL) {
-      rows.push(...TPR_DEFAULT_SUMMARY_ROWS);
+      const equipmentRows = rows.filter(
+        (row) => row.reportType === TprReportType.PERFORMANCE_EQUIPMENT,
+      );
+      const equipmentIds = new Set(equipmentRows.map((row) => row.uniqueId));
+      const regularRows = rows.filter((row) => !equipmentIds.has(row.uniqueId));
+      rows.splice(
+        0,
+        rows.length,
+        ...regularRows,
+        ...TPR_DEFAULT_SUMMARY_ROWS,
+        ...equipmentRows,
+      );
     }
     return {
       period,
@@ -299,6 +319,7 @@ export class TprReportService {
       generatedAt: payload.generatedAt,
       cached,
       detailKind: payload.detailKind,
+      filteredTotal: payload.filteredTotal,
       rows: payload.rows,
       pagination: {
         page,
@@ -389,8 +410,9 @@ export class TprReportService {
     uniqueId: string,
     page: number,
     limit: number,
+    ownership: TprEquipmentOwnership,
   ): string {
-    return `${TPR_CACHE_NAMESPACE}:${period}:v${version}:detail:${reportType}:${uniqueId}:page:${page}:limit:${limit}`;
+    return `${TPR_CACHE_NAMESPACE}:${period}:v${version}:detail:${reportType}:${uniqueId}:ownership:${ownership}:page:${page}:limit:${limit}`;
   }
 
   private lockKey(period: string): string {

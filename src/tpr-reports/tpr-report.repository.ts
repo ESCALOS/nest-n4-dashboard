@@ -3,8 +3,14 @@ import { ConfigService } from '@nestjs/config';
 import * as sql from 'mssql';
 import { N4Service } from '../database/n4/n4.service';
 import { TprReportQueries } from './tpr-report.queries';
-import { TPR_VESSEL_CALLS_UNIQUE_ID } from './tpr-report.defaults';
 import {
+  TPR_SC_UNIQUE_ID,
+  TPR_VESSEL_CALLS_UNIQUE_ID,
+} from './tpr-report.defaults';
+import {
+  TprEquipmentDetailRow,
+  TprEquipmentDetailSqlRow,
+  TprEquipmentOwnership,
   TprDetailReportType,
   TprBusinessDetailRow,
   TprDetailKind,
@@ -26,6 +32,7 @@ export interface TprDetailPageData {
   total: number;
   detailKind: TprDetailKind;
   rows: TprBusinessDetailRow[];
+  filteredTotal: number;
 }
 
 @Injectable()
@@ -80,15 +87,43 @@ export class TprReportRepository {
     }));
   }
 
+  async getEquipmentSummary(
+    range: TprPeriodRange,
+  ): Promise<TprOperationalSummaryRow[]> {
+    const result = await this.n4Service.query<TprSummarySqlRow>(
+      TprReportQueries.equipmentSummary,
+      'tprEquipmentSummary',
+      (request) => this.bindPeriod(request, range),
+    );
+    return result.recordset.map((row) => ({
+      uniqueId: row.unique_id,
+      accountDescription: row.account_description,
+      total: Number(row.total),
+      reportType: TprReportType.PERFORMANCE_EQUIPMENT,
+      supportsDetails: row.unique_id !== TPR_SC_UNIQUE_ID,
+    }));
+  }
+
   async getDetails(
     range: TprPeriodRange,
     reportType: TprDetailReportType,
     uniqueId: string,
     offset: number,
     limit: number,
+    ownership: TprEquipmentOwnership = TprEquipmentOwnership.ALL,
   ): Promise<TprDetailPageData> {
     if (uniqueId === TPR_VESSEL_CALLS_UNIQUE_ID) {
       return this.getVesselCallsDetails(range, offset, limit);
+    }
+
+    if (reportType === TprReportType.PERFORMANCE_EQUIPMENT) {
+      return this.getEquipmentDetails(
+        range,
+        uniqueId,
+        offset,
+        limit,
+        ownership,
+      );
     }
 
     const isContainer = reportType === TprReportType.CONTAINER_VESSEL;
@@ -114,6 +149,7 @@ export class TprReportRepository {
       total: Number(result.recordset[0]?.total_count ?? 0),
       detailKind: TprDetailKind.MOVEMENTS,
       rows: result.recordset.map((row) => this.mapDetailRow(row)),
+      filteredTotal: Number(result.recordset[0]?.total_count ?? 0),
     };
   }
 
@@ -143,6 +179,38 @@ export class TprReportRepository {
             : new Date(row.atd).toISOString(),
         manifest: row.manifest,
         vessel: row.vessel ?? null,
+      })),
+      filteredTotal: Number(result.recordset[0]?.total_count ?? 0),
+    };
+  }
+
+  private async getEquipmentDetails(
+    range: TprPeriodRange,
+    uniqueId: string,
+    offset: number,
+    limit: number,
+    ownership: TprEquipmentOwnership,
+  ): Promise<TprDetailPageData> {
+    const result = await this.n4Service.query<TprEquipmentDetailSqlRow>(
+      TprReportQueries.equipmentDetails,
+      'tprEquipmentDetails',
+      (request) => {
+        this.bindPeriod(request, range);
+        request.input('unique_id', sql.VarChar(30), uniqueId);
+        request.input('ownership', sql.VarChar(10), ownership);
+        request.input('offset', sql.Int, offset);
+        request.input('limit', sql.Int, limit);
+      },
+    );
+    return {
+      accountDescription: result.recordset[0]?.account_description ?? null,
+      total: Number(result.recordset[0]?.total_count ?? 0),
+      filteredTotal: Number(result.recordset[0]?.filtered_total ?? 0),
+      detailKind: TprDetailKind.EQUIPMENT_MOVES,
+      rows: result.recordset.map<TprEquipmentDetailRow>((row) => ({
+        equipment: row.equipment,
+        ownership: row.ownership as TprEquipmentDetailRow['ownership'],
+        total: Number(row.total),
       })),
     };
   }

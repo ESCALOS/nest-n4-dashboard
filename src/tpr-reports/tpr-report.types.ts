@@ -2,15 +2,24 @@ export enum TprReportType {
   ALL = 'ALL',
   CONTAINER_VESSEL = 'CONTAINER_VESSEL',
   TRUCK_IN_OUT = 'TRUCK_IN_OUT',
+  PERFORMANCE_EQUIPMENT = 'PERFORMANCE_EQUIPMENT',
 }
 
 export type TprDetailReportType =
   | TprReportType.CONTAINER_VESSEL
-  | TprReportType.TRUCK_IN_OUT;
+  | TprReportType.TRUCK_IN_OUT
+  | TprReportType.PERFORMANCE_EQUIPMENT;
+
+export enum TprEquipmentOwnership {
+  ALL = 'ALL',
+  INTERNAL = 'INTERNAL',
+  RENTED = 'RENTED',
+}
 
 export enum TprDetailKind {
   MOVEMENTS = 'MOVEMENTS',
   VESSEL_CALLS = 'VESSEL_CALLS',
+  EQUIPMENT_MOVES = 'EQUIPMENT_MOVES',
 }
 
 export interface TprOperationalSummaryRow {
@@ -58,7 +67,16 @@ export interface TprVesselCallDetailRow {
   vessel: string | null;
 }
 
-export type TprBusinessDetailRow = TprDetailRow | TprVesselCallDetailRow;
+export interface TprEquipmentDetailRow {
+  equipment: string;
+  ownership: Exclude<TprEquipmentOwnership, TprEquipmentOwnership.ALL>;
+  total: number;
+}
+
+export type TprBusinessDetailRow =
+  | TprDetailRow
+  | TprVesselCallDetailRow
+  | TprEquipmentDetailRow;
 
 export interface TprDetailResponse {
   period: string;
@@ -68,6 +86,7 @@ export interface TprDetailResponse {
   generatedAt: string;
   cached: boolean;
   detailKind: TprDetailKind;
+  filteredTotal: number;
   rows: TprBusinessDetailRow[];
   pagination: {
     page: number;
@@ -109,6 +128,15 @@ export interface TprVesselCallDetailSqlRow {
   total_count: number;
 }
 
+export interface TprEquipmentDetailSqlRow {
+  account_description: string;
+  equipment: string;
+  ownership: 'INTERNAL' | 'RENTED';
+  total: number;
+  total_count: number;
+  filtered_total: number;
+}
+
 export interface TprCachedSummary {
   generatedAt: string;
   rows: TprOperationalSummaryRow[];
@@ -119,5 +147,6 @@ export interface TprCachedDetailPage {
   accountDescription: string;
   total: number;
   detailKind: TprDetailKind;
+  filteredTotal: number;
   rows: TprBusinessDetailRow[];
 }

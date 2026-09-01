@@ -1,7 +1,8 @@
 import { TprSummaryRow } from './tpr-report.types';
 
 export const TPR_DETAIL_PAGE_SIZE = 100;
-export const TPR_CACHE_NAMESPACE = 'report:tpr:v5';
+export const TPR_CACHE_NAMESPACE = 'report:tpr:v6';
+export const TPR_SC_UNIQUE_ID = '81013063';
 export const TPR_VESSEL_CALLS_UNIQUE_ID = '5X101000BDUMSDUM';
 
 export const TPR_OPERATIONAL_TOPIC_ORDER: readonly string[] = [

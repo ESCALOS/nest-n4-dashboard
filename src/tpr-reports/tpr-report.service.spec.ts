@@ -33,6 +33,7 @@ describe('TprReportService', () => {
     const repository = {
       getContainerSummary: jest.fn().mockResolvedValue([containerRow]),
       getTruckSummary: jest.fn().mockResolvedValue([truckRow]),
+      getEquipmentSummary: jest.fn().mockResolvedValue([]),
       getDetails: jest.fn(),
     };
     const redis = {
@@ -97,6 +98,7 @@ describe('TprReportService', () => {
 
     expect(repository.getContainerSummary).toHaveBeenCalledTimes(1);
     expect(repository.getTruckSummary).toHaveBeenCalledTimes(1);
+    expect(repository.getEquipmentSummary).toHaveBeenCalledTimes(1);
     expect(
       response.rows.find((row) => row.uniqueId === containerRow.uniqueId),
     ).toEqual({
@@ -108,6 +110,48 @@ describe('TprReportService', () => {
     });
     expect(response.rows.slice(-9)).toEqual(TPR_DEFAULT_SUMMARY_ROWS);
     expect(redis.setJson).toHaveBeenCalledTimes(1);
+  });
+
+  it('appends equipment topics after defaults and filters them by report type', async () => {
+    const { service, repository } = createSubject();
+    repository.getEquipmentSummary.mockResolvedValue([
+      {
+        uniqueId: '81013053',
+        accountDescription: 'Performance Equipment TT Total Moves',
+        total: 12,
+        reportType: TprReportType.PERFORMANCE_EQUIPMENT,
+        supportsDetails: true,
+      },
+      {
+        uniqueId: '81013063',
+        accountDescription: 'Performance Equipment SC Total Moves',
+        total: 0,
+        reportType: TprReportType.PERFORMANCE_EQUIPMENT,
+        supportsDetails: false,
+      },
+    ]);
+
+    const all = await service.getSummary('2026-06', TprReportType.ALL);
+    expect(all.rows.slice(-2).map((row) => row.uniqueId)).toEqual([
+      '81013053',
+      '81013063',
+    ]);
+    expect(all.rows.at(-1)?.hasDetails).toBe(false);
+
+    const { service: filtered, repository: filteredRepository } =
+      createSubject();
+    filteredRepository.getEquipmentSummary.mockResolvedValue(
+      repository.getEquipmentSummary.mock.results[0]?.value,
+    );
+    const equipment = await filtered.getSummary(
+      '2026-06',
+      TprReportType.PERFORMANCE_EQUIPMENT,
+    );
+    expect(
+      equipment.rows.every(
+        (row) => row.reportType === TprReportType.PERFORMANCE_EQUIPMENT,
+      ),
+    ).toBe(true);
   });
 
   it('returns 49 ordered operational topics and appends defaults only for ALL', async () => {
