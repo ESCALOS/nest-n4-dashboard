@@ -610,10 +610,7 @@ export const N4Queries = {
         'PEPIO' AS pol,
         pod.id AS pod,
         pod2.id AS fds,
-        CASE WHEN appointment.start_date IS NULL THEN NULL
-             ELSE CONVERT(VARCHAR(10), appointment.start_date, 103) + ' '
-                + LEFT(CONVERT(VARCHAR(8), appointment.start_date, 108), 5)
-        END AS appointment,
+        CONVERT(VARCHAR(30), appointment.id) AS appointment,
         appointment.operator AS operator,
         booking.nbr AS booking,
         unit.id AS container_number,
@@ -666,7 +663,21 @@ export const N4Queries = {
         WHERE base_item.eqo_gkey = booking.gkey
         ORDER BY equipment.gkey DESC
     ) order_item
-    LEFT JOIN inv_unit unit ON unit.depart_order_item_gkey = order_item.base_item_gkey
+    OUTER APPLY (
+        -- A container can have multiple historical unit records for the same order.
+        -- Keep the latest record per physical container, without collapsing the booking.
+        SELECT ranked_unit.*
+        FROM (
+            SELECT candidate.*,
+                ROW_NUMBER() OVER (
+                    PARTITION BY candidate.id
+                    ORDER BY candidate.gkey DESC
+                ) AS booking_unit_rank
+            FROM inv_unit candidate
+            WHERE candidate.depart_order_item_gkey = order_item.base_item_gkey
+        ) ranked_unit
+        WHERE ranked_unit.booking_unit_rank = 1
+    ) unit
     OUTER APPLY (
         SELECT TOP 1 visit_fcy.transit_state
         FROM inv_unit_fcy_visit visit_fcy
@@ -674,14 +685,16 @@ export const N4Queries = {
         ORDER BY visit_fcy.gkey DESC
     ) fcy
     OUTER APPLY (
-        SELECT TOP 1 slot.start_date, appt.creator AS operator
+        SELECT TOP 1 appt.id, appt.creator AS operator
         FROM road_gate_appointment appt
         LEFT JOIN road_appt_time_slot slot ON slot.gkey = appt.time_slot_gkey
         WHERE appt.order_gkey = booking.gkey
-          AND appt.trans_type = 'DOE'
+          AND appt.trans_type IN ('DOE', 'PUM')
           AND appt.gate_gkey = 53
           AND appt.state <> 'CANCEL'
-        ORDER BY slot.start_date DESC, appt.gkey DESC
+        -- Prefer the full reception appointment; use dispatch when none exists.
+        ORDER BY CASE WHEN appt.trans_type = 'DOE' THEN 0 ELSE 1 END,
+            slot.start_date DESC, appt.gkey DESC
     ) appointment
     LEFT JOIN ref_routing_point pod ON pod.gkey = booking.pod1_gkey
     LEFT JOIN ref_routing_point pod2 ON pod2.gkey = booking.pod2_gkey
