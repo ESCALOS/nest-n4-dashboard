@@ -78,14 +78,16 @@ export const N4Queries = {
 
     /**
      * Get order mapping by order gkeys (batch)
-     * Returns: order_gkey, booking, commodity
+     * Returns: order_gkey, booking, commodity, line_id
      */
     getOrderInfoByOrderGkeys: `
         SELECT
             bk.gkey AS order_gkey,
             bk.nbr AS booking,
+            line.id AS line_id,
             rc.short_name AS commodity
         FROM inv_eq_base_order bk
+        LEFT JOIN ref_bizunit_scoped line ON line.gkey = bk.line_gkey
         OUTER APPLY (
             SELECT MIN(oreq.commodity_gkey) AS commodity_gkey
             FROM inv_eq_base_order_item ord

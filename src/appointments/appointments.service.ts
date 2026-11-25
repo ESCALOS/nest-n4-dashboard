@@ -37,6 +37,12 @@ type AppointmentStageCachePayload = {
   stage: string;
 } & AppointmentStageTimestamps;
 
+type AppointmentOrderInfo = {
+  booking: string;
+  producto: string;
+  lineId: string | null;
+};
+
 @Injectable()
 export class AppointmentsService {
   private readonly logger = new Logger(AppointmentsService.name);
@@ -351,7 +357,7 @@ export class AppointmentsService {
   private mapPendingAppointment(
     r: PendingAppointmentResult,
     vesselNamesByCarrierVisit: Map<number, { label: string; lineId: string | null }>,
-    orderInfoByOrderGkey: Map<number, { booking: string; producto: string }>,
+    orderInfoByOrderGkey: Map<number, AppointmentOrderInfo>,
   ): PendingAppointmentDto {
     const vesselVisitGkey = this.normalizeGkey(r.VesselVisitGkey);
     const orderGkey = this.normalizeGkey(r.OrderGkey);
@@ -365,12 +371,12 @@ export class AppointmentsService {
     const orderInfo =
       orderGkey && orderInfoByOrderGkey.has(orderGkey)
         ? orderInfoByOrderGkey.get(orderGkey)!
-        : { booking: 'N.E.', producto: 'N.E.' };
+        : { booking: 'N.E.', producto: 'N.E.', lineId: null };
 
     return {
       cita: r.Cita,
       fechaCita: r.Fecha,
-      linea: vesselInfo?.lineId ?? 'N.E.',
+      linea: orderInfo.lineId ?? 'N.E.',
       booking: orderInfo.booking,
       placa: r.Placa,
       carreta: r.Carreta,
@@ -451,14 +457,14 @@ export class AppointmentsService {
   }
 
   /**
-   * Resolve booking/product metadata for pending appointments using Redis cache.
+   * Resolve booking/product/line metadata for appointments using Redis cache.
    * Cache key: appointments:order-info:{orderGkey}
    * TTL: 3 days
    */
   private async resolveOrderInfoByOrderGkey(
     results: Array<{ OrderGkey?: number | string | null }>,
-  ): Promise<Map<number, { booking: string; producto: string }>> {
-    const mapping = new Map<number, { booking: string; producto: string }>();
+  ): Promise<Map<number, AppointmentOrderInfo>> {
+    const mapping = new Map<number, AppointmentOrderInfo>();
 
     const orderGkeys = Array.from(
       new Set(
@@ -472,10 +478,9 @@ export class AppointmentsService {
 
     const cachePairs = await Promise.all(
       orderGkeys.map(async (gkey) => {
-        const cached = await this.redisService.getJson<{
-          booking: string;
-          producto: string;
-        }>(CACHE_KEYS.appointmentOrderInfo(gkey));
+        const cached = await this.redisService.getJson<AppointmentOrderInfo>(
+          CACHE_KEYS.appointmentOrderInfo(gkey),
+        );
         return [gkey, cached] as const;
       }),
     );
@@ -483,7 +488,7 @@ export class AppointmentsService {
     const missingGkeys: number[] = [];
 
     for (const [gkey, cached] of cachePairs) {
-      if (cached) {
+      if (cached && cached.lineId !== undefined) {
         mapping.set(gkey, cached);
       } else {
         missingGkeys.push(gkey);
@@ -499,6 +504,7 @@ export class AppointmentsService {
         const payload = {
           booking: order.booking ?? 'N.E.',
           producto: order.commodity ?? 'N.E.',
+          lineId: order.line_id ?? null,
         };
 
         mapping.set(order.order_gkey, payload);
@@ -775,7 +781,7 @@ export class AppointmentsService {
   private mapAppointment(
     r: AppointmentResult,
     vesselNamesByCarrierVisit: Map<number, { label: string; lineId: string | null }>,
-    orderInfoByOrderGkey: Map<number, { booking: string; producto: string }>,
+    orderInfoByOrderGkey: Map<number, AppointmentOrderInfo>,
     stageTimestampsByTranGkey: Map<string, AppointmentStageTimestamps>,
   ): AppointmentInProgressDto {
     const tranGkey = this.normalizeBigintKey(r.TranGkey);
@@ -807,7 +813,7 @@ export class AppointmentsService {
     const orderInfo =
       orderGkey && orderInfoByOrderGkey.has(orderGkey)
         ? orderInfoByOrderGkey.get(orderGkey)!
-        : { booking: r.Booking ?? 'N.E.', producto: r.Producto ?? 'N.E.' };
+        : { booking: r.Booking ?? 'N.E.', producto: r.Producto ?? 'N.E.', lineId: null };
 
     const tiempoMin = stageDate
       ? normalizedStage === 'tranquera'
@@ -831,7 +837,7 @@ export class AppointmentsService {
       deducibleEsperaInicioCarguio: 0,
       deducibleInicioCarguioTermino: 0,
       tiempoEfectivo: tiempoMin,
-      linea: vesselInfo?.lineId ?? 'N.E.',
+      linea: orderInfo.lineId ?? 'N.E.',
       booking: orderInfo.booking,
       permiso: 'N.E.',
       placa: r.Placa ?? '',

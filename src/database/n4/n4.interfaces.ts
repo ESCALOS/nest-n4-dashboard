@@ -30,6 +30,7 @@ export interface OrderInfoResult {
     order_gkey: number;
     booking: string | null;
     commodity: string | null;
+    line_id: string | null;
 }
 
 export interface NotArrivedContainerBaseResult {
