@@ -1,0 +1,2 @@
+CREATE TYPE "ShippingLine" AS ENUM ('CMA','EVE','MAE','MSC','ONE','SML','STM','ZIM');
+ALTER TABLE "users" ADD COLUMN "is_internal" BOOLEAN NOT NULL DEFAULT true, ADD COLUMN "allowed_lines" "ShippingLine"[] NOT NULL DEFAULT ARRAY[]::"ShippingLine"[];

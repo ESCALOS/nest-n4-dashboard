@@ -25,7 +25,19 @@ enum SspPermissionScope {
   EXTERNAL
 }
 
+enum ShippingLine {
+ CMA
+ EVE
+ MAE
+ MSC
+ ONE
+ SML
+ STM
+ ZIM
+}
 model User {
+ isInternal Boolean @default(true) @map("is_internal")
+ allowedLines ShippingLine[] @default([]) @map("allowed_lines")
   id           String   @id @default(uuid())
   email        String   @unique
   passwordHash String   @map("password_hash")

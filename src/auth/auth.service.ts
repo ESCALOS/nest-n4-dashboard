@@ -1,8 +1,4 @@
-import {
-    Injectable,
-    UnauthorizedException,
-    Logger,
-} from '@nestjs/common';
+import { Injectable, UnauthorizedException, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as argon2 from 'argon2';
@@ -15,220 +11,242 @@ import { CACHE_KEYS } from '../common/constants/cache-keys.constant';
 
 @Injectable()
 export class AuthService {
-    private readonly logger = new Logger(AuthService.name);
-    private readonly sseTokenTtlSeconds = 30;
+  private readonly logger = new Logger(AuthService.name);
+  private readonly sseTokenTtlSeconds = 30;
 
-    constructor(
-        private readonly prisma: PrismaService,
-        private readonly jwtService: JwtService,
-        private readonly configService: ConfigService,
-        private readonly redisService: RedisService,
-    ) { }
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly jwtService: JwtService,
+    private readonly configService: ConfigService,
+    private readonly redisService: RedisService,
+  ) {}
 
-    async login(loginDto: LoginDto) {
-        const user = await this.prisma.user.findUnique({
-            where: { email: loginDto.email },
-        });
+  async login(loginDto: LoginDto) {
+    const user = await this.prisma.user.findUnique({
+      where: { email: loginDto.email },
+    });
 
-        if (!user || !user.isActive) {
-            throw new UnauthorizedException('Credenciales inválidas.');
-        }
-
-        const isPasswordValid = await argon2.verify(
-            user.passwordHash,
-            loginDto.password,
-        );
-
-        if (!isPasswordValid) {
-            throw new UnauthorizedException('Credenciales inválidas.');
-        }
-
-        const tokens = await this.generateTokens(user.id, user.email, user.role);
-
-        this.logger.log(`User ${user.email} logged in`);
-
-        return {
-            accessToken: tokens.accessToken,
-            refreshToken: tokens.refreshToken,
-            user: {
-                id: user.id,
-                email: user.email,
-                name: user.name,
-                role: user.role,
-                privileges: user.privileges,
-            },
-        };
+    if (!user || !user.isActive) {
+      throw new UnauthorizedException('Credenciales inválidas.');
     }
 
-    async refreshToken(refreshToken: string) {
-        const tokenHash = this.hashToken(refreshToken);
+    const isPasswordValid = await argon2.verify(
+      user.passwordHash,
+      loginDto.password,
+    );
 
-        const storedToken = await this.prisma.refreshToken.findUnique({
-            where: { tokenHash },
-            include: { user: true },
-        });
+    if (!isPasswordValid) {
+      throw new UnauthorizedException('Credenciales inválidas.');
+    }
 
-        if (!storedToken || storedToken.revoked || storedToken.expiresAt < new Date()) {
-            if (storedToken && !storedToken.revoked) {
-                // Token expired — clean up
-                await this.prisma.refreshToken.update({
-                    where: { id: storedToken.id },
-                    data: { revoked: true },
-                });
-            }
-            throw new UnauthorizedException('Invalid or expired refresh token');
-        }
+    const tokens = await this.generateTokens(user.id, user.email, user.role);
 
-        if (!storedToken.user.isActive) {
-            throw new UnauthorizedException('User account is deactivated');
-        }
+    this.logger.log(`User ${user.email} logged in`);
 
-        // Revoke old refresh token (rotation)
+    return {
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        privileges: user.privileges,
+        isInternal: user.isInternal,
+        allowedLines: user.allowedLines,
+      },
+    };
+  }
+
+  async refreshToken(refreshToken: string) {
+    const tokenHash = this.hashToken(refreshToken);
+
+    const storedToken = await this.prisma.refreshToken.findUnique({
+      where: { tokenHash },
+      include: { user: true },
+    });
+
+    if (
+      !storedToken ||
+      storedToken.revoked ||
+      storedToken.expiresAt < new Date()
+    ) {
+      if (storedToken && !storedToken.revoked) {
+        // Token expired — clean up
         await this.prisma.refreshToken.update({
-            where: { id: storedToken.id },
-            data: { revoked: true },
+          where: { id: storedToken.id },
+          data: { revoked: true },
         });
-
-        // Generate new token pair
-        const tokens = await this.generateTokens(
-            storedToken.user.id,
-            storedToken.user.email,
-            storedToken.user.role,
-        );
-
-        this.logger.log(`Token refreshed for user ${storedToken.user.email}`);
-
-        return {
-            accessToken: tokens.accessToken,
-            refreshToken: tokens.refreshToken,
-            user: {
-                id: storedToken.user.id,
-                email: storedToken.user.email,
-                name: storedToken.user.name,
-                role: storedToken.user.role,
-                privileges: storedToken.user.privileges,
-            },
-        };
+      }
+      throw new UnauthorizedException('Invalid or expired refresh token');
     }
 
-    async getCurrentUser(userId: string) {
-        const user = await this.prisma.user.findUnique({
-            where: { id: userId },
-            select: {
-                id: true,
-                email: true,
-                name: true,
-                role: true,
-                privileges: true,
-                isActive: true,
-            },
-        });
-
-        if (!user?.isActive) {
-            throw new UnauthorizedException('User not found or inactive');
-        }
-
-        return {
-            id: user.id,
-            email: user.email,
-            name: user.name,
-            role: user.role,
-            privileges: user.privileges,
-        };
+    if (!storedToken.user.isActive) {
+      throw new UnauthorizedException('User account is deactivated');
     }
 
-    async logout(accessToken: string, userId: string) {
-        // Blacklist the access token in Redis until it expires
-        const decoded = this.jwtService.decode(accessToken) as { exp: number };
-        if (decoded?.exp) {
-            const ttl = decoded.exp - Math.floor(Date.now() / 1000);
-            if (ttl > 0) {
-                await this.redisService.set(CACHE_KEYS.tokenBlacklist(accessToken), '1', ttl);
-            }
-        }
+    // Revoke old refresh token (rotation)
+    await this.prisma.refreshToken.update({
+      where: { id: storedToken.id },
+      data: { revoked: true },
+    });
 
-        // Revoke all refresh tokens for this user
-        await this.prisma.refreshToken.updateMany({
-            where: { userId, revoked: false },
-            data: { revoked: true },
-        });
+    // Generate new token pair
+    const tokens = await this.generateTokens(
+      storedToken.user.id,
+      storedToken.user.email,
+      storedToken.user.role,
+    );
 
-        this.logger.log(`User ${userId} logged out`);
+    this.logger.log(`Token refreshed for user ${storedToken.user.email}`);
+
+    return {
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      user: {
+        id: storedToken.user.id,
+        email: storedToken.user.email,
+        name: storedToken.user.name,
+        role: storedToken.user.role,
+        privileges: storedToken.user.privileges,
+        isInternal: storedToken.user.isInternal,
+        allowedLines: storedToken.user.allowedLines,
+      },
+    };
+  }
+
+  async getCurrentUser(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        privileges: true,
+        isInternal: true,
+        allowedLines: true,
+        isActive: true,
+      },
+    });
+
+    if (!user?.isActive) {
+      throw new UnauthorizedException('User not found or inactive');
     }
 
-    async createSseOneTimeToken(userId: string): Promise<{ token: string; ttlSeconds: number }> {
-        const token = randomUUID();
-        const key = CACHE_KEYS.sseOneTimeToken(token);
+    return {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+      privileges: user.privileges,
+      isInternal: user.isInternal,
+      allowedLines: user.allowedLines,
+    };
+  }
 
+  async logout(accessToken: string, userId: string) {
+    // Blacklist the access token in Redis until it expires
+    const decoded = this.jwtService.decode(accessToken) as { exp: number };
+    if (decoded?.exp) {
+      const ttl = decoded.exp - Math.floor(Date.now() / 1000);
+      if (ttl > 0) {
         await this.redisService.set(
-            key,
-            JSON.stringify({ userId, createdAt: Date.now() }),
-            this.sseTokenTtlSeconds,
+          CACHE_KEYS.tokenBlacklist(accessToken),
+          '1',
+          ttl,
         );
-
-        return {
-            token,
-            ttlSeconds: this.sseTokenTtlSeconds,
-        };
+      }
     }
 
-    async consumeSseOneTimeToken(token: string): Promise<boolean> {
-        const key = CACHE_KEYS.sseOneTimeToken(token);
-        const value = await this.redisService.getClient().call('GETDEL', key);
-        return typeof value === 'string' && value.length > 0;
+    // Revoke all refresh tokens for this user
+    await this.prisma.refreshToken.updateMany({
+      where: { userId, revoked: false },
+      data: { revoked: true },
+    });
+
+    this.logger.log(`User ${userId} logged out`);
+  }
+
+  async createSseOneTimeToken(
+    userId: string,
+  ): Promise<{ token: string; ttlSeconds: number }> {
+    const token = randomUUID();
+    const key = CACHE_KEYS.sseOneTimeToken(token);
+
+    await this.redisService.set(
+      key,
+      JSON.stringify({ userId, createdAt: Date.now() }),
+      this.sseTokenTtlSeconds,
+    );
+
+    return {
+      token,
+      ttlSeconds: this.sseTokenTtlSeconds,
+    };
+  }
+
+  async consumeSseOneTimeToken(token: string): Promise<boolean> {
+    const key = CACHE_KEYS.sseOneTimeToken(token);
+    const value = await this.redisService.getClient().call('GETDEL', key);
+    return typeof value === 'string' && value.length > 0;
+  }
+
+  async changePassword(
+    userId: string,
+    currentPassword: string,
+    newPassword: string,
+  ) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+
+    if (!user) {
+      throw new UnauthorizedException('User not found');
     }
 
-    async changePassword(userId: string, currentPassword: string, newPassword: string) {
-        const user = await this.prisma.user.findUnique({ where: { id: userId } });
-
-        if (!user) {
-            throw new UnauthorizedException('User not found');
-        }
-
-        const isValid = await argon2.verify(user.passwordHash, currentPassword);
-        if (!isValid) {
-            throw new UnauthorizedException('La contraseña actual es incorrecta');
-        }
-
-        const newHash = await argon2.hash(newPassword);
-        await this.prisma.user.update({
-            where: { id: userId },
-            data: { passwordHash: newHash },
-        });
-
-        this.logger.log(`User ${user.email} changed their password`);
+    const isValid = await argon2.verify(user.passwordHash, currentPassword);
+    if (!isValid) {
+      throw new UnauthorizedException('La contraseña actual es incorrecta');
     }
 
-    private async generateTokens(userId: string, email: string, role: string) {
-        const payload: JwtPayload = {
-            sub: userId,
-            email,
-            role: role as any,
-        };
+    const newHash = await argon2.hash(newPassword);
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { passwordHash: newHash },
+    });
 
-        const accessToken = this.jwtService.sign(payload);
+    this.logger.log(`User ${user.email} changed their password`);
+  }
 
-        // Generate a cryptographically secure refresh token
-        const refreshToken = randomBytes(64).toString('hex');
-        const tokenHash = this.hashToken(refreshToken);
+  private async generateTokens(userId: string, email: string, role: string) {
+    const payload: JwtPayload = {
+      sub: userId,
+      email,
+      role: role as any,
+    };
 
-        const refreshExpirationSeconds = this.configService.get<number>(
-            'jwt.refreshExpiration',
-            604800, // 7 days default
-        );
+    const accessToken = this.jwtService.sign(payload);
 
-        await this.prisma.refreshToken.create({
-            data: {
-                tokenHash,
-                userId,
-                expiresAt: new Date(Date.now() + refreshExpirationSeconds * 1000),
-            },
-        });
+    // Generate a cryptographically secure refresh token
+    const refreshToken = randomBytes(64).toString('hex');
+    const tokenHash = this.hashToken(refreshToken);
 
-        return { accessToken, refreshToken };
-    }
+    const refreshExpirationSeconds = this.configService.get<number>(
+      'jwt.refreshExpiration',
+      604800, // 7 days default
+    );
 
-    private hashToken(token: string): string {
-        return createHash('sha256').update(token).digest('hex');
-    }
+    await this.prisma.refreshToken.create({
+      data: {
+        tokenHash,
+        userId,
+        expiresAt: new Date(Date.now() + refreshExpirationSeconds * 1000),
+      },
+    });
+
+    return { accessToken, refreshToken };
+  }
+
+  private hashToken(token: string): string {
+    return createHash('sha256').update(token).digest('hex');
+  }
 }

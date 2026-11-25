@@ -1,8 +1,9 @@
 import {
-    Injectable,
-    ConflictException,
-    NotFoundException,
-    Logger,
+  Injectable,
+  ConflictException,
+  NotFoundException,
+  Logger,
+  BadRequestException,
 } from '@nestjs/common';
 import * as argon2 from 'argon2';
 import { PrismaService } from '../database/prisma/prisma.service';
@@ -10,117 +11,136 @@ import { CreateUserDto, UpdateUserDto } from './dto';
 
 @Injectable()
 export class UsersService {
-    private readonly logger = new Logger(UsersService.name);
+  private readonly logger = new Logger(UsersService.name);
 
-    constructor(private readonly prisma: PrismaService) { }
+  constructor(private readonly prisma: PrismaService) {}
 
-    async findAll() {
-        const users = await this.prisma.user.findMany({
-            select: {
-                id: true,
-                email: true,
-                name: true,
-                role: true,
-                privileges: true,
-                isActive: true,
-                createdAt: true,
-                updatedAt: true,
-            },
-            orderBy: { createdAt: 'desc' },
-        });
-        return users;
+  async findAll() {
+    const users = await this.prisma.user.findMany({
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        privileges: true,
+        isInternal: true,
+        allowedLines: true,
+        isActive: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    return users;
+  }
+
+  async findById(id: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        privileges: true,
+        isInternal: true,
+        allowedLines: true,
+        isActive: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    if (!user) {
+      throw new NotFoundException(`User with id ${id} not found`);
     }
 
-    async findById(id: string) {
-        const user = await this.prisma.user.findUnique({
-            where: { id },
-            select: {
-                id: true,
-                email: true,
-                name: true,
-                role: true,
-                privileges: true,
-                isActive: true,
-                createdAt: true,
-                updatedAt: true,
-            },
-        });
+    return user;
+  }
 
-        if (!user) {
-            throw new NotFoundException(`User with id ${id} not found`);
-        }
+  async create(createUserDto: CreateUserDto) {
+    const existing = await this.prisma.user.findUnique({
+      where: { email: createUserDto.email },
+    });
 
-        return user;
+    if (existing) {
+      throw new ConflictException('Email already in use');
     }
 
-    async create(createUserDto: CreateUserDto) {
-        const existing = await this.prisma.user.findUnique({
-            where: { email: createUserDto.email },
-        });
+    if (
+      createUserDto.isInternal === false &&
+      !createUserDto.allowedLines?.length
+    )
+      throw new BadRequestException('Seleccione al menos una línea');
+    const passwordHash = await argon2.hash(createUserDto.password);
 
-        if (existing) {
-            throw new ConflictException('Email already in use');
-        }
+    const user = await this.prisma.user.create({
+      data: {
+        email: createUserDto.email,
+        passwordHash,
+        name: createUserDto.name,
+        role: createUserDto.role,
+        privileges: createUserDto.privileges ?? [],
+        isInternal: createUserDto.isInternal ?? true,
+        allowedLines:
+          (createUserDto.isInternal ?? true) ? [] : createUserDto.allowedLines,
+      },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        privileges: true,
+        isInternal: true,
+        allowedLines: true,
+        isActive: true,
+        createdAt: true,
+      },
+    });
 
-        const passwordHash = await argon2.hash(createUserDto.password);
+    this.logger.log(`User created: ${user.email}`);
+    return user;
+  }
 
-        const user = await this.prisma.user.create({
-            data: {
-                email: createUserDto.email,
-                passwordHash,
-                name: createUserDto.name,
-                role: createUserDto.role,
-                privileges: createUserDto.privileges ?? [],
-            },
-            select: {
-                id: true,
-                email: true,
-                name: true,
-                role: true,
-                privileges: true,
-                isActive: true,
-                createdAt: true,
-            },
-        });
+  async update(id: string, updateUserDto: UpdateUserDto) {
+    const current = await this.findById(id);
+    const internal = updateUserDto.isInternal ?? current.isInternal;
+    const lines = updateUserDto.allowedLines ?? current.allowedLines;
+    if (!internal && !lines.length)
+      throw new BadRequestException('Seleccione al menos una línea');
+    const data: any = { ...updateUserDto, allowedLines: internal ? [] : lines };
 
-        this.logger.log(`User created: ${user.email}`);
-        return user;
+    if (updateUserDto.password) {
+      data.passwordHash = await argon2.hash(updateUserDto.password);
+      delete data.password;
     }
 
-    async update(id: string, updateUserDto: UpdateUserDto) {
-        await this.findById(id);
+    const user = await this.prisma.user.update({
+      where: { id },
+      data,
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        privileges: true,
+        isInternal: true,
+        allowedLines: true,
+        isActive: true,
+        updatedAt: true,
+      },
+    });
 
-        const data: any = { ...updateUserDto };
+    this.logger.log(`User updated: ${user.email}`);
+    return user;
+  }
 
-        if (updateUserDto.password) {
-            data.passwordHash = await argon2.hash(updateUserDto.password);
-            delete data.password;
-        }
+  async remove(id: string) {
+    await this.findById(id);
 
-        const user = await this.prisma.user.update({
-            where: { id },
-            data,
-            select: {
-                id: true,
-                email: true,
-                name: true,
-                role: true,
-                privileges: true,
-                isActive: true,
-                updatedAt: true,
-            },
-        });
+    await this.prisma.user.delete({ where: { id } });
 
-        this.logger.log(`User updated: ${user.email}`);
-        return user;
-    }
-
-    async remove(id: string) {
-        await this.findById(id);
-
-        await this.prisma.user.delete({ where: { id } });
-
-        this.logger.log(`User deleted: ${id}`);
-        return { message: 'User deleted successfully' };
-    }
+    this.logger.log(`User deleted: ${id}`);
+    return { message: 'User deleted successfully' };
+  }
 }

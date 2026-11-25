@@ -1,33 +1,42 @@
+import { ShippingLine } from '@prisma/client';
+import { IsBoolean as InternalBoolean } from 'class-validator';
+
 import {
-    IsString,
-    IsOptional,
-    IsEnum,
-    IsBoolean,
-    MinLength,
-    IsArray,
+  IsString,
+  IsOptional,
+  IsEnum,
+  IsBoolean,
+  MinLength,
+  IsArray,
 } from 'class-validator';
+
 import { Privilege, Role } from '@prisma/client';
 
 export class UpdateUserDto {
-    @IsString()
-    @IsOptional()
-    name?: string;
+  @IsOptional() @InternalBoolean() isInternal?: boolean;
+  @IsOptional()
+  @IsArray()
+  @IsEnum(ShippingLine, { each: true })
+  allowedLines?: ShippingLine[];
+  @IsString()
+  @IsOptional()
+  name?: string;
 
-    @IsString()
-    @MinLength(6)
-    @IsOptional()
-    password?: string;
+  @IsString()
+  @MinLength(6)
+  @IsOptional()
+  password?: string;
 
-    @IsEnum(Role)
-    @IsOptional()
-    role?: Role;
+  @IsEnum(Role)
+  @IsOptional()
+  role?: Role;
 
-    @IsBoolean()
-    @IsOptional()
-    isActive?: boolean;
+  @IsBoolean()
+  @IsOptional()
+  isActive?: boolean;
 
-    @IsArray()
-    @IsEnum(Privilege, { each: true })
-    @IsOptional()
-    privileges?: Privilege[];
+  @IsArray()
+  @IsEnum(Privilege, { each: true })
+  @IsOptional()
+  privileges?: Privilege[];
 }
