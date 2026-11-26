@@ -40,6 +40,31 @@ describe.each(['in-progress', 'pending'])('%s appointment booking line', (kind) 
     expect((await fetchAppointments()).data[0].linea).toBe('BOOKING-LINE');
   });
 
+  it('uses the unit operator for a return without a booking', async () => {
+    const { fetchAppointments, n4 } = setup();
+    const rows = [{ Tipo: 'Devolución', UnitLineId: ' MSC ', OrderGkey: null }];
+    n4.getPendingAppointments.mockResolvedValue(rows);
+    n4.getAppointmentsInProgress.mockResolvedValue(rows);
+    expect((await fetchAppointments()).data[0].linea).toBe('MSC');
+    expect(n4.getOrderInfoByOrderGkeys).not.toHaveBeenCalled();
+  });
+
+  it.each([null, '', '   '])('uses N.E. when a return has no unit operator (%s)', async (UnitLineId) => {
+    const { fetchAppointments, n4 } = setup();
+    const rows = [{ Tipo: 'Devolución', UnitLineId, OrderGkey: 12 }];
+    n4.getPendingAppointments.mockResolvedValue(rows);
+    n4.getAppointmentsInProgress.mockResolvedValue(rows);
+    expect((await fetchAppointments()).data[0].linea).toBe('N.E.');
+  });
+
+  it('keeps the booking line for other types even if a unit operator is present', async () => {
+    const { fetchAppointments, n4 } = setup();
+    const rows = [{ Tipo: 'Recepción Full', UnitLineId: 'UNIT-LINE', OrderGkey: 12 }];
+    n4.getPendingAppointments.mockResolvedValue(rows);
+    n4.getAppointmentsInProgress.mockResolvedValue(rows);
+    expect((await fetchAppointments()).data[0].linea).toBe('BOOKING-LINE');
+  });
+
   it('refreshes legacy cached booking data', async () => {
     const { fetchAppointments, n4, redis } = setup({ booking: 'BOOKING', producto: 'PRODUCT' });
     await fetchAppointments();

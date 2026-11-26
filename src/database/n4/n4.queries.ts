@@ -806,6 +806,7 @@ export const N4Queries = {
         appt.id AS Cita,
         DATEADD(HOUR, 5, slot.start_date) AS Fecha,
         appt.order_gkey AS OrderGkey,
+        unit_line.id AS UnitLineId,
         appt.truck_id AS Placa,
         appt.chassis_id AS Carreta,
         shipper.name AS Cliente,
@@ -825,6 +826,8 @@ export const N4Queries = {
         ON slot.gkey = appt.time_slot_gkey
     LEFT JOIN inv_unit unit
         ON unit.gkey = appt.unit_gkey
+    LEFT JOIN ref_bizunit_scoped unit_line
+        ON unit_line.gkey = unit.line_op
     LEFT JOIN ref_bizunit_scoped shipper
         ON shipper.gkey = appt.shipper_gkey
     LEFT JOIN ref_routing_point pod
@@ -846,6 +849,7 @@ export const N4Queries = {
         DATEADD(HOUR,5,slot.start_date) AS Fecha,
         gat.eqo_nbr AS Booking,
         appt.order_gkey AS OrderGkey,
+        unit_line.id AS UnitLineId,
         appt.vessel_visit_gkey AS VesselVisitGkey,
         shi.name AS Cliente,
         unit.id AS Contenedor,
@@ -881,6 +885,7 @@ export const N4Queries = {
         END AS HasEir
     FROM road_truck_transactions gat
     LEFT JOIN inv_unit unit ON unit.gkey = gat.unit_gkey
+    LEFT JOIN ref_bizunit_scoped unit_line ON unit_line.gkey = unit.line_op
     LEFT JOIN road_gate_appointment appt ON appt.id = gat.appointment_nbr
     LEFT JOIN ref_bizunit_scoped shi ON shi.gkey = appt.shipper_gkey
     LEFT JOIN road_truck_visit_details truc ON truc.tvdtls_gkey = gat.truck_visit_gkey

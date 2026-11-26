@@ -376,7 +376,7 @@ export class AppointmentsService {
     return {
       cita: r.Cita,
       fechaCita: r.Fecha,
-      linea: orderInfo.lineId ?? 'N.E.',
+      linea: r.Tipo === 'Devolución' ? r.UnitLineId?.trim() || 'N.E.' : orderInfo.lineId ?? 'N.E.',
       booking: orderInfo.booking,
       placa: r.Placa,
       carreta: r.Carreta,
@@ -837,7 +837,7 @@ export class AppointmentsService {
       deducibleEsperaInicioCarguio: 0,
       deducibleInicioCarguioTermino: 0,
       tiempoEfectivo: tiempoMin,
-      linea: orderInfo.lineId ?? 'N.E.',
+      linea: r.Tipo === 'Devolución' ? r.UnitLineId?.trim() || 'N.E.' : orderInfo.lineId ?? 'N.E.',
       booking: orderInfo.booking,
       permiso: 'N.E.',
       placa: r.Placa ?? '',

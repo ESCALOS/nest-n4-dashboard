@@ -109,6 +109,7 @@ export interface IndirectShipmentTicket {
 }
 
 export interface AppointmentResult {
+    UnitLineId?: string | null;
     TranGkey: number | string | null;
     Cita?: string;
     codigo?: string;
@@ -217,6 +218,7 @@ export interface AppointmentStageResult {
 }
 
 export interface PendingAppointmentResult {
+    UnitLineId?: string | null;
     Cita: string;
     Fecha: Date;
     OrderGkey: number | null;
