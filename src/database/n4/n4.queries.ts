@@ -651,7 +651,6 @@ export const N4Queries = {
     INNER JOIN argo_carrier_visit acv ON acv.gkey = booking.vessel_visit_gkey
     INNER JOIN vsl_vessel_visit_details visit ON visit.vvd_gkey = acv.cvcvd_gkey
     INNER JOIN vsl_vessels vessel ON vessel.gkey = visit.vessel_gkey
-    LEFT JOIN ref_bizunit_scoped line ON line.gkey = acv.operator_gkey
     OUTER APPLY (
         SELECT TOP 1
             base_item.gkey AS base_item_gkey,
@@ -680,6 +679,8 @@ export const N4Queries = {
         ) ranked_unit
         WHERE ranked_unit.booking_unit_rank = 1
     ) unit
+    LEFT JOIN ref_bizunit_scoped line
+        ON line.gkey = COALESCE(unit.line_op, booking.line_gkey)
     OUTER APPLY (
         SELECT TOP 1 visit_fcy.transit_state
         FROM inv_unit_fcy_visit visit_fcy

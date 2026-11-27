@@ -3,6 +3,13 @@ import { N4Queries } from './n4.queries';
 describe('booking export query', () => {
   const query = N4Queries.getContainerBookingExport;
 
+  it('uses the container shipping line, falling back to the booking rather than the vessel operator', () => {
+    expect(query).toContain(
+      'line.gkey = COALESCE(unit.line_op, booking.line_gkey)',
+    );
+    expect(query).not.toContain('line.gkey = acv.operator_gkey');
+  });
+
   it('includes dispatch appointments while retaining reception priority and excluding cancellations', () => {
     expect(query).toContain("appt.trans_type IN ('DOE', 'PUM')");
     expect(query).toContain("appt.state <> 'CANCEL'");
